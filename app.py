@@ -53,15 +53,24 @@ CORS(
 # ---------------- POSTGRES ----------------
 
 def get_pg():
-    return psycopg.connect(
-        host=DB_HOST,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        port=DB_PORT,
-        sslmode="require",
-        row_factory=psycopg.rows.dict_row
-    )
+    try:
+        conn_string = (
+            f"host={DB_HOST} "
+            f"dbname={DB_NAME} "
+            f"user={DB_USER} "
+            f"password={DB_PASSWORD} "
+            f"port={DB_PORT} "
+            f"sslmode=require"
+        )
+
+        return psycopg.connect(
+            conn_string,
+            row_factory=psycopg.rows.dict_row
+        )
+
+    except Exception as e:
+        print("POSTGRES CONNECTION FAILED:", repr(e))
+        raise
 
 # ---------------- PASSWORD DB (SQLite kept) ----------------
 
