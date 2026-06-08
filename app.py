@@ -6,8 +6,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg
+import psycopg.rows
 
 import sqlite3
 import os
@@ -50,20 +50,20 @@ CORS(
     }
 )
 
-# ---------------- POSTGRES CONNECTION ----------------
+# ---------------- POSTGRES ----------------
 
 def get_pg():
-    return psycopg2.connect(
+    return psycopg.connect(
         host=DB_HOST,
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASSWORD,
         port=DB_PORT,
         sslmode="require",
-        cursor_factory=RealDictCursor
+        row_factory=psycopg.rows.dict_row
     )
 
-# ---------------- PASSWORD DB (KEEP LOCAL SQLITE) ----------------
+# ---------------- PASSWORD DB (SQLite kept) ----------------
 
 PASSWORD_DB = os.path.join(os.path.dirname(__file__), "data", "passwords.db")
 
@@ -84,7 +84,7 @@ def init_password_db():
 
 init_password_db()
 
-# ---------------- AUTH HELPERS ----------------
+# ---------------- AUTH ----------------
 
 def login_required(f):
     @wraps(f)
@@ -103,7 +103,7 @@ def admin_required(f):
         return f(*args, **kwargs)
     return wrapper
 
-# ---------------- AUTH ROUTES ----------------
+# ---------------- LOGIN ----------------
 
 @limiter.limit("5 per minute")
 @app.route("/api/admin_login", methods=["POST"])
@@ -136,23 +136,18 @@ def login():
     rows = cur.fetchall()
     conn.close()
 
-    match = None
+    for h, exp in rows:
+        if check_password_hash(h, pw):
 
-    for password_hash, expires in rows:
-        if check_password_hash(password_hash, pw):
-            match = expires
-            break
+            if exp and time.time() > exp:
+                return jsonify({"success": False, "error": "expired"}), 401
 
-    if match is None:
-        return jsonify({"success": False}), 401
+            session["authenticated"] = True
+            return jsonify({"success": True})
 
-    if match and time.time() > match:
-        return jsonify({"success": False, "error": "expired"}), 401
+    return jsonify({"success": False}), 401
 
-    session["authenticated"] = True
-    return jsonify({"success": True})
-
-# ---------------- PASSWORD MANAGEMENT ----------------
+# ---------------- PASSWORD CRUD ----------------
 
 @app.route("/api/passwords")
 @admin_required
@@ -163,15 +158,9 @@ def get_passwords():
     rows = cur.fetchall()
     conn.close()
 
-    result = []
-    for i, h, e in rows:
-        result.append({
-            "id": i,
-            "label": f"Password #{i}",
-            "expires": e
-        })
-
-    return jsonify(result)
+    return jsonify([
+        {"id": r[0], "expires": r[2]} for r in rows
+    ])
 
 
 @app.route("/api/add_password", methods=["POST"])
@@ -211,12 +200,12 @@ def remove_password():
 
     return jsonify({"success": True})
 
-# ---------------- POSTGRES HELPERS ----------------
+# ---------------- HELPERS ----------------
 
 def clean(r):
     return {k: (v if v is not None else "") for k, v in r.items()}
 
-# ---------------- SEARCH ----------------
+# ---------------- SEARCH (POSTGRES) ----------------
 
 @limiter.limit("20 per minute")
 @app.route("/api/search")
@@ -229,17 +218,16 @@ def search():
     conn = get_pg()
     cur = conn.cursor()
 
-    if q:
+    like = f"%{q}%"
 
-        like = f"%{q}%"
+    if q:
 
         cur.execute("""
             SELECT COUNT(*) FROM contacts
-            WHERE
-                email ILIKE %s OR
-                name ILIKE %s OR
-                phone ILIKE %s OR
-                main_address__c ILIKE %s
+            WHERE email ILIKE %s
+               OR name ILIKE %s
+               OR phone ILIKE %s
+               OR main_address__c ILIKE %s
         """, (like, like, like, like))
 
         total = cur.fetchone()["count"]
@@ -249,11 +237,10 @@ def search():
                 id, email, name, firstname, lastname,
                 phone, birthdate, main_address__c
             FROM contacts
-            WHERE
-                email ILIKE %s OR
-                name ILIKE %s OR
-                phone ILIKE %s OR
-                main_address__c ILIKE %s
+            WHERE email ILIKE %s
+               OR name ILIKE %s
+               OR phone ILIKE %s
+               OR main_address__c ILIKE %s
             LIMIT %s OFFSET %s
         """, (like, like, like, like, PAGE_SIZE, offset))
 
@@ -280,7 +267,7 @@ def search():
         "page_size": PAGE_SIZE
     })
 
-# ---------------- CONTACT DETAILS ----------------
+# ---------------- CONTACT ----------------
 
 @app.route("/api/contact/<id>")
 @login_required
@@ -289,7 +276,7 @@ def contact(id):
     conn = get_pg()
     cur = conn.cursor()
 
-    cur.execute("SELECT * FROM contacts WHERE id=%s", (id,))
+    cur.execute("SELECT * FROM contacts WHERE id = %s", (id,))
     row = cur.fetchone()
 
     conn.close()
