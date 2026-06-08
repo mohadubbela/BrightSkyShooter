@@ -1,81 +1,206 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Bright Sky Shooter</title>
+
+<link rel="icon" href="/static/Shooter.png">
 
 <link rel="stylesheet" href="/static/style.css">
 <script defer src="/static/script.js"></script>
+
 </head>
 
 <body>
 
 <!-- HERO -->
-<div class="hero">
-  <img src="/static/Banner.png" />
-  <div class="hero-overlay"></div>
 
-  <div class="hero-inner">
-    <div class="brand">
-      <img src="/static/BSS-Logo.png" />
-      <h1>Bright Sky Shooter</h1>
+<header class="hero">
+
+    <img src="/static/Banner.png" class="hero-bg">
+
+    <div class="hero-overlay"></div>
+
+    <div class="hero-inner">
+
+        <div class="brand">
+
+            <img src="/static/BSS-Logo.png" alt="Logo">
+
+            <div>
+                <h1>BrightSky Intelligence</h1>
+                <span>Secure Contact Intelligence Platform</span>
+            </div>
+
+        </div>
+
+        <div class="system-status">
+            <span class="status-dot"></span>
+            ONLINE
+        </div>
+
     </div>
-  </div>
-</div>
+
+</header>
 
 <!-- MAIN -->
-<div class="main">
 
-  <!-- LOGIN -->
-  <div class="login-card" id="loginBox">
-    <h2>Login</h2>
+<main class="main">
 
-    <form id="loginForm">
-      <input type="password" id="password" placeholder="Password" />
-      <button type="submit">Login</button>
-      <div id="loginError" class="error"></div>
-    </form>
-  </div>
+    <!-- LOGIN -->
 
-  <!-- PANEL -->
-  <div id="backendUI" class="panel hidden">
+    <section class="login-card" id="loginBox">
 
-    <h2>BrightSky Database</h2>
+        <h2>Authentication Required</h2>
 
-    <div class="controls">
-      <input id="search" placeholder="Search contacts..." />
-      <button id="prevBtn">Previous</button>
-      <button id="nextBtn">Next</button>
+        <p class="muted">
+            Enter access credentials to continue.
+        </p>
+
+        <form id="loginForm">
+
+            <input
+                type="password"
+                id="password"
+                placeholder="Password"
+                autocomplete="off"
+            >
+
+            <button type="submit">
+                Login
+            </button>
+
+            <div id="loginError" class="error"></div>
+
+        </form>
+
+    </section>
+
+    <!-- DASHBOARD -->
+
+    <section id="backendUI" class="panel hidden">
+
+        <!-- HEADER -->
+
+        <div class="dashboard-header">
+
+            <div>
+
+                <h2>Contact Database</h2>
+
+                <p class="muted">
+                    Search and inspect records in real time
+                </p>
+
+            </div>
+
+            <div class="dashboard-actions">
+
+                <button id="prevBtn">
+                    ← Previous
+                </button>
+
+                <button id="nextBtn">
+                    Next →
+                </button>
+
+            </div>
+
+        </div>
+
+        <!-- STATS -->
+
+        <div class="stats-grid">
+
+            <div class="stat-card">
+                <span>Database</span>
+                <strong>ONLINE</strong>
+            </div>
+
+            <div class="stat-card">
+                <span>Search</span>
+                <strong>ACTIVE</strong>
+            </div>
+
+            <div class="stat-card">
+                <span>Status</span>
+                <strong id="statusText">READY</strong>
+            </div>
+
+        </div>
+
+        <!-- SEARCH -->
+
+        <div class="controls">
+
+            <div class="search-box">
+
+                <input
+                    id="search"
+                    placeholder="Search names, emails, phone numbers..."
+                    autocomplete="off"
+                >
+
+            </div>
+
+        </div>
+
+        <!-- TABLE -->
+
+        <div class="table-wrapper">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>Name</th>
+                        <th>Last</th>
+                        <th>First</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Birthdate</th>
+                        <th>Address</th>
+                    </tr>
+
+                </thead>
+
+                <tbody></tbody>
+
+            </table>
+
+        </div>
+
+        <div id="status" class="footer-status"></div>
+
+    </section>
+
+</main>
+
+<!-- DETAILS MODAL -->
+
+<div id="detailsModal" class="modal hidden">
+
+    <div class="modal-content">
+
+        <button id="closeModal" class="close-btn">
+            ×
+        </button>
+
+        <h3>Contact Details</h3>
+
+        <div id="modalDetails"></div>
+
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Last</th>
-          <th>First</th>
-          <th>Email</th>
-          <th>Phone</th>
-          <th>Birthdate</th>
-          <th>Address</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <div id="status"></div>
-
-  </div>
 </div>
 
-<!-- MODAL -->
-<div id="detailsModal" class="modal hidden">
-  <div class="modal-content">
-    <span id="closeModal">×</span>
-    <div id="modalDetails"></div>
-  </div>
-</div>
+<!-- TOASTS -->
+
+<div id="toastContainer"></div>
 
 </body>
 </html>
