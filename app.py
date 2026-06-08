@@ -245,8 +245,10 @@ def search():
     conn = get_pg()
     cur = conn.cursor()
 
-    cur.execute('SELECT COUNT(*) FROM contacts')
-    return jsonify({"count": cur.fetchone()[0]})
+    cur.execute("SELECT COUNT(*) AS count FROM contacts")
+    row = cur.fetchone()
+
+    return jsonify({"count": row["count"]})
 
 
 # ---------------- CONTACT ----------------
