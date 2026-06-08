@@ -37,7 +37,7 @@ CORS(
     resources={
         r"/api/*": {
             "origins": [
-                "https://subcommittee-buy-quickly-latin.trycloudflare.com/"
+                "https://brightskyshooter.onrender.com"
             ]
         }
     }
