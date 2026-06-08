@@ -64,7 +64,7 @@ def get_pg():
     )
 
 # ---------------- PASSWORD DB (SQLite kept) ----------------
-os.makedirs(os.path.dirname(PASSWORD_DB), exist_ok=True)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PASSWORD_DB = os.path.join(BASE_DIR, "data", "passwords.db")
