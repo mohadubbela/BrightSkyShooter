@@ -239,16 +239,92 @@ def clean(r):
     return {k: (v if v is not None else "") for k, v in r.items()}
 
 # ---------------- SEARCH (POSTGRES) ----------------
+@limiter.limit("20 per minute")
 @app.route("/api/search")
 @login_required
 def search():
-    conn = get_pg()
-    cur = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) AS count FROM contacts")
-    row = cur.fetchone()
+    conn = None
 
-    return jsonify({"count": row["count"]})
+    try:
+        q = request.args.get("q", "").strip()
+        offset = max(int(request.args.get("offset", 0)), 0)
+        like = f"%{q}%"
+
+        conn = get_pg()
+        cur = conn.cursor()
+
+        # ---------------- COUNT ----------------
+        if q:
+            cur.execute("""
+                SELECT COUNT(*) AS count
+                FROM contacts
+                WHERE "Email" ILIKE %s
+                   OR "FirstName" ILIKE %s
+                   OR "LastName" ILIKE %s
+                   OR "Phone" ILIKE %s
+                   OR "Main_Address__c" ILIKE %s
+            """, (like, like, like, like, like))
+        else:
+            cur.execute("SELECT COUNT(*) AS count FROM contacts")
+
+        total = cur.fetchone()["count"]
+
+        # ---------------- DATA ----------------
+        if q:
+            cur.execute("""
+                SELECT
+                    id,
+                    "Email",
+                    "FirstName",
+                    "LastName",
+                    "Phone",
+                    "Birthdate",
+                    "Main_Address__c"
+                FROM contacts
+                WHERE "Email" ILIKE %s
+                   OR "FirstName" ILIKE %s
+                   OR "LastName" ILIKE %s
+                   OR "Phone" ILIKE %s
+                   OR "Main_Address__c" ILIKE %s
+                LIMIT %s OFFSET %s
+            """, (like, like, like, like, like, PAGE_SIZE, offset))
+        else:
+            cur.execute("""
+                SELECT
+                    id,
+                    "Email",
+                    "FirstName",
+                    "LastName",
+                    "Phone",
+                    "Birthdate",
+                    "Main_Address__c"
+                FROM contacts
+                LIMIT %s OFFSET %s
+            """, (PAGE_SIZE, offset))
+
+        rows = cur.fetchall()
+
+        return jsonify({
+            "results": [clean(r) for r in rows],
+            "total": total,
+            "offset": offset,
+            "page_size": PAGE_SIZE
+        })
+
+    except Exception as e:
+        import traceback
+        print("🔥 SEARCH ERROR:", repr(e))
+        traceback.print_exc()
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
+
+    finally:
+        if conn:
+            conn.close()
 
 
 # ---------------- CONTACT ----------------
