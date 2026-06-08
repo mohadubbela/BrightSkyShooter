@@ -1,70 +1,646 @@
-<div id="adminPanel" class="panel hidden">
+<!DOCTYPE html>
+<html lang="en">
+<head>
 
-    <div class="dashboard-header">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        <div>
+<title>Bright Sky Shooter Admin</title>
 
-            <h2>Password Manager</h2>
+<link rel="icon" href="/static/Shooter.png">
 
-            <p class="muted">
-                Manage temporary access credentials
-            </p>
+<style>
 
-        </div>
+:root{
+--bg:#0b0d11;
+--panel:#12161d;
+--panel2:#171c24;
+--border:#26303d;
+--accent:#00ff88;
+--danger:#ff4d67;
+--text:#f1f5f9;
+--muted:#8a96a8;
+}
 
-        <div class="system-status">
-            <span class="status-dot"></span>
-            ADMIN
-        </div>
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+}
 
-    </div>
+body{
+background:var(--bg);
+font-family:Inter,Segoe UI,sans-serif;
+color:var(--text);
+min-height:100vh;
+}
 
-    <div class="stats-grid">
+body::before{
+content:"";
+position:fixed;
+inset:0;
+background:
+radial-gradient(circle at top right,
+rgba(0,255,136,.08),
+transparent 35%);
+pointer-events:none;
+}
 
-        <div class="stat-card">
-            <span>Active Passwords</span>
-            <strong id="passwordCount">0</strong>
-        </div>
+.hero{
+height:220px;
+position:relative;
+overflow:hidden;
+}
 
-        <div class="stat-card">
-            <span>Access Level</span>
-            <strong>Administrator</strong>
-        </div>
+.hero img{
+width:100%;
+height:100%;
+object-fit:cover;
+filter:brightness(.45);
+}
 
-        <div class="stat-card">
-            <span>Status</span>
-            <strong id="adminStatus">
-                READY
-            </strong>
-        </div>
+.hero-overlay{
+position:absolute;
+inset:0;
+background:
+linear-gradient(
+to bottom,
+rgba(0,0,0,.2),
+var(--bg)
+);
+}
 
-    </div>
+.hero-inner{
+position:absolute;
+bottom:30px;
+left:50%;
+transform:translateX(-50%);
+width:min(1200px,92%);
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
 
-    <form id="addPasswordForm">
+.brand{
+display:flex;
+align-items:center;
+gap:14px;
+}
 
-        <div class="input-row">
+.brand img{
+height:42px;
+}
 
-            <input
-                type="text"
-                id="newPassword"
-                placeholder="New password"
-                required
-            >
+.brand h1{
+font-size:28px;
+font-weight:700;
+}
 
-            <input
-                type="number"
-                id="expireMinutes"
-                placeholder="Expire (hours)"
-            >
+.main{
+max-width:1200px;
+margin:auto;
+padding:25px;
+}
 
-            <button type="submit">
-                Create Password
-            </button>
+.login-card,
+.panel{
+background:rgba(18,22,29,.85);
+border:1px solid var(--border);
+backdrop-filter:blur(18px);
+border-radius:18px;
+padding:24px;
+}
 
-        </div>
+.login-card{
+max-width:420px;
+margin:auto;
+}
 
-    </form>
+.login-card h2{
+margin-bottom:20px;
+}
 
-    <div id="passwordList"></div>
+input{
+width:100%;
+padding:14px;
+margin-bottom:12px;
+background:#0d1117;
+border:1px solid var(--border);
+border-radius:12px;
+color:white;
+}
+
+button{
+border:none;
+cursor:pointer;
+padding:14px 18px;
+border-radius:12px;
+font-weight:600;
+}
+
+.primary{
+background:linear-gradient(
+135deg,
+#00ff88,
+#00d977
+);
+color:black;
+}
+
+.remove{
+background:linear-gradient(
+135deg,
+#ff4d67,
+#ff845f
+);
+color:white;
+}
+
+.dashboard-header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+margin-bottom:25px;
+}
+
+.stats{
+display:grid;
+grid-template-columns:
+repeat(auto-fit,minmax(220px,1fr));
+gap:15px;
+margin-bottom:25px;
+}
+
+.stat{
+background:var(--panel2);
+border:1px solid var(--border);
+border-radius:14px;
+padding:18px;
+}
+
+.stat span{
+display:block;
+color:var(--muted);
+font-size:13px;
+margin-bottom:6px;
+}
+
+.stat strong{
+font-size:24px;
+}
+
+.input-row{
+display:flex;
+gap:12px;
+flex-wrap:wrap;
+margin-bottom:20px;
+}
+
+.input-row input{
+flex:1;
+min-width:220px;
+margin:0;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+}
+
+th,
+td{
+padding:14px;
+text-align:left;
+border-bottom:1px solid var(--border);
+}
+
+th{
+color:var(--accent);
+}
+
+.hidden{
+display:none;
+}
+
+.toast-container{
+position:fixed;
+bottom:20px;
+right:20px;
+display:flex;
+flex-direction:column;
+gap:10px;
+z-index:9999;
+}
+
+.toast{
+padding:12px 18px;
+border-radius:10px;
+color:white;
+animation:fadeIn .2s ease;
+}
+
+.success{
+background:#16a34a;
+}
+
+.error{
+background:#dc2626;
+}
+
+@keyframes fadeIn{
+from{
+opacity:0;
+transform:translateY(10px);
+}
+to{
+opacity:1;
+transform:none;
+}
+}
+
+@media(max-width:700px){
+
+.hero{
+height:180px;
+}
+
+.dashboard-header{
+flex-direction:column;
+align-items:flex-start;
+gap:10px;
+}
+
+.input-row{
+flex-direction:column;
+}
+
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="hero">
+
+<img src="/static/Banner.png">
+
+<div class="hero-overlay"></div>
+
+<div class="hero-inner">
+
+<div class="brand">
+<img src="/static/BSS-Logo.png">
+<h1>Bright Sky Shooter</h1>
+</div>
 
 </div>
+</div>
+
+<div class="main">
+
+<div class="login-card" id="adminLoginBox">
+
+<h2>Admin Login</h2>
+
+<form id="adminLoginForm">
+
+<input
+type="password"
+id="adminPassword"
+placeholder="Admin Password">
+
+<button
+class="primary"
+type="submit">
+
+Login
+
+</button>
+
+<div
+id="adminLoginError"
+style="margin-top:10px;color:#ff6b6b">
+</div>
+
+</form>
+
+</div>
+
+<div
+id="adminPanel"
+class="panel hidden">
+
+<div class="dashboard-header">
+
+<div>
+<h2>Password Manager</h2>
+<p style="color:var(--muted)">
+Manage access passwords
+</p>
+</div>
+
+</div>
+
+<div class="stats">
+
+<div class="stat">
+<span>Passwords</span>
+<strong id="passwordCount">
+0
+</strong>
+</div>
+
+<div class="stat">
+<span>Access Level</span>
+<strong>
+Administrator
+</strong>
+</div>
+
+<div class="stat">
+<span>Status</span>
+<strong id="adminStatus">
+READY
+</strong>
+</div>
+
+</div>
+
+<form id="addPasswordForm">
+
+<div class="input-row">
+
+<input
+type="text"
+id="newPassword"
+placeholder="New Password"
+required>
+
+<input
+type="number"
+id="expireMinutes"
+placeholder="Expire (hours)">
+
+<button
+class="primary"
+type="submit">
+
+Create
+
+</button>
+
+</div>
+
+</form>
+
+<div id="passwordList"></div>
+
+</div>
+
+</div>
+
+<div class="toast-container"
+id="toastContainer"></div>
+
+<script>
+
+function showToast(
+message,
+success=true
+){
+
+const toast =
+document.createElement("div");
+
+toast.className =
+`toast ${
+success
+? "success"
+: "error"
+}`;
+
+toast.textContent =
+message;
+
+toastContainer.appendChild(
+toast
+);
+
+setTimeout(()=>{
+toast.remove();
+},3000);
+
+}
+
+document
+.getElementById(
+"adminLoginForm"
+)
+.addEventListener(
+"submit",
+async e=>{
+
+e.preventDefault();
+
+const res =
+await fetch(
+"/api/admin_login",
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+password:
+adminPassword.value
+})
+}
+);
+
+const data =
+await res.json();
+
+if(data.success){
+
+adminLoginBox
+.classList.add(
+"hidden"
+);
+
+adminPanel
+.classList.remove(
+"hidden"
+);
+
+showToast(
+"Logged in"
+);
+
+loadPasswords();
+
+}else{
+
+adminLoginError
+.textContent =
+"Invalid password";
+
+}
+
+});
+
+async function loadPasswords(){
+
+try{
+
+adminStatus.textContent =
+"LOADING";
+
+const res =
+await fetch(
+"/api/passwords"
+);
+
+const passwords =
+await res.json();
+
+passwordCount.textContent =
+passwords.length;
+
+let html = `
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Expires</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+`;
+
+passwords.forEach(p=>{
+
+const expires =
+p.expires
+? new Date(
+p.expires * 1000
+).toLocaleString()
+: "Never";
+
+html += `
+<tr>
+
+<td>#${p.id}</td>
+
+<td>${expires}</td>
+
+<td>
+
+<button
+class="remove"
+onclick="removePassword(${p.id})">
+
+Delete
+
+</button>
+
+</td>
+
+</tr>
+`;
+
+});
+
+html += `
+</tbody>
+</table>
+`;
+
+passwordList.innerHTML =
+html;
+
+adminStatus.textContent =
+"READY";
+
+}catch{
+
+adminStatus.textContent =
+"ERROR";
+
+showToast(
+"Failed loading passwords",
+false
+);
+
+}
+
+}
+
+document
+.getElementById(
+"addPasswordForm"
+)
+.addEventListener(
+"submit",
+async e=>{
+
+e.preventDefault();
+
+await fetch(
+"/api/add_password",
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+password:
+newPassword.value,
+minutes:
+expireMinutes.value
+})
+}
+);
+
+newPassword.value="";
+expireMinutes.value="";
+
+showToast(
+"Password created"
+);
+
+loadPasswords();
+
+});
+
+async function removePassword(id){
+
+await fetch(
+"/api/remove_password",
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+id:id
+})
+}
+);
+
+showToast(
+"Password removed"
+);
+
+loadPasswords();
+
+}
+
+</script>
+
+</body>
+</html>
