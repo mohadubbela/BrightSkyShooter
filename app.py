@@ -227,26 +227,33 @@ def search():
     if q:
 
         cur.execute("""
-            SELECT COUNT(*) FROM contacts
-            WHERE email ILIKE %s
-               OR name ILIKE %s
-               OR phone ILIKE %s
-               OR main_address__c ILIKE %s
-        """, (like, like, like, like))
+    SELECT COUNT(*) FROM contacts
+    WHERE "Email" ILIKE %s
+       OR "FirstName" ILIKE %s
+       OR "LastName" ILIKE %s
+       OR "Phone" ILIKE %s
+       OR "Main_Address__c" ILIKE %s
+        """, (like, like, like, like, like))
 
         total = cur.fetchone()["count"]
 
         cur.execute("""
-            SELECT
-                id, email, name, firstname, lastname,
-                phone, birthdate, main_address__c
-            FROM contacts
-            WHERE email ILIKE %s
-               OR name ILIKE %s
-               OR phone ILIKE %s
-               OR main_address__c ILIKE %s
-            LIMIT %s OFFSET %s
-        """, (like, like, like, like, PAGE_SIZE, offset))
+    SELECT
+        id,
+        "Email",
+        "FirstName",
+        "LastName",
+        "Phone",
+        "Birthdate",
+        "Main_Address__c"
+    FROM contacts
+    WHERE "Email" ILIKE %s
+       OR "FirstName" ILIKE %s
+       OR "LastName" ILIKE %s
+       OR "Phone" ILIKE %s
+       OR "Main_Address__c" ILIKE %s
+    LIMIT %s OFFSET %s
+        """, (like, like, like, like, like, PAGE_SIZE, offset))
 
     else:
 
