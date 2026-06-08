@@ -239,14 +239,14 @@ def clean(r):
     return {k: (v if v is not None else "") for k, v in r.items()}
 
 # ---------------- SEARCH (POSTGRES) ----------------
-print("➡️ SEARCH HIT")
-print("session:", dict(session))
-print("args:", request.args)
+
 @app.route("/api/search")
 @login_required
 def search():
     try:
-        print("➡️ SEARCH ENTERED")
+        print("➡️ SEARCH HIT")
+
+        print("SESSION:", dict(session))  # ✅ SAFE (inside request)
 
         q = request.args.get("q", "").strip()
         offset = int(request.args.get("offset", 0))
@@ -254,21 +254,17 @@ def search():
         print("q =", q)
         print("offset =", offset)
 
-        print("➡️ CONNECTING TO DB")
-
         conn = get_pg()
-        print("✅ DB CONNECTED")
+        print("DB CONNECTED")
 
         cur = conn.cursor()
-
         cur.execute("SELECT 1")
-        print("✅ TEST QUERY OK")
+        print("QUERY OK")
 
         return jsonify({"ok": True})
 
     except Exception as e:
         import traceback
-        print("🔥 SEARCH FAILED")
         traceback.print_exc()
 
         return jsonify({
