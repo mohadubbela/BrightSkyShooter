@@ -209,6 +209,8 @@ def remove_password():
 @app.route("/api/db_test")
 def db_test():
     try:
+        print("🔌 Attempting DB connection...")
+
         conn = get_pg()
         cur = conn.cursor()
 
@@ -216,6 +218,8 @@ def db_test():
         result = cur.fetchone()
 
         conn.close()
+
+        print("✅ DB connection successful")
 
         return jsonify({
             "success": True,
@@ -225,11 +229,13 @@ def db_test():
 
     except Exception as e:
         import traceback
+
+        print("🔥 DB CONNECTION FAILED:")
+        print(repr(e))
         traceback.print_exc()
 
         return jsonify({
             "success": False,
-            "message": "Database connection failed",
             "error": str(e),
             "type": type(e).__name__
         }), 500
