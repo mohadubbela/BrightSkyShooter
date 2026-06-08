@@ -206,6 +206,34 @@ def remove_password():
 
 # ---------------- HELPERS ----------------
 
+@app.route("/api/db_test")
+def db_test():
+    try:
+        conn = get_pg()
+        cur = conn.cursor()
+
+        cur.execute("SELECT 1")
+        result = cur.fetchone()
+
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Database connected successfully",
+            "result": result
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return jsonify({
+            "success": False,
+            "message": "Database connection failed",
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
+
 def clean(r):
     return {k: (v if v is not None else "") for k, v in r.items()}
 
