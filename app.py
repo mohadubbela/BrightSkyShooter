@@ -242,39 +242,11 @@ def clean(r):
 @app.route("/api/search")
 @login_required
 def search():
-    import traceback
+    conn = get_pg()
+    cur = conn.cursor()
 
-    try:
-        print("➡️ 1: ENTER SEARCH")
-
-        q = request.args.get("q", "")
-        offset = request.args.get("offset", 0)
-
-        print("➡️ 2: GOT ARGS", q, offset)
-
-        print("➡️ 3: BEFORE DB CONNECT")
-
-        conn = get_pg()
-
-        print("➡️ 4: DB CONNECTED")
-
-        cur = conn.cursor()
-
-        cur.execute("SELECT 1")
-        print("➡️ 5: TEST QUERY OK")
-
-        conn.close()
-
-        return jsonify({"ok": True})
-
-    except Exception as e:
-        print("🔥 SEARCH FAILED")
-        traceback.print_exc()
-
-        return jsonify({
-            "error": str(e),
-            "type": type(e).__name__
-        }), 500
+    cur.execute('SELECT COUNT(*) FROM contacts')
+    return jsonify({"count": cur.fetchone()[0]})
 
 
 # ---------------- CONTACT ----------------
