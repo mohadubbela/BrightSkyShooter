@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bright Sky Shooter Admin</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/Shooter.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/Shooter.png">
+    <link rel="apple-touch-icon" href="/static/Shooter.png">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #e0e0e0;
+            min-height: 100vh;
+            background: #0f0f12;
+        }
+
+            body::before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                z-index: -1;
+                background: linear-gradient(135deg, #0f0f12 0%, #14151b 40%, #1a1b21 100%);
+            }
+
+        /* HERO */
+        .hero {
+            position: relative;
+            height: 260px;
+            overflow: hidden;
+        }
+
+            .hero img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                filter: brightness(.75);
+            }
+
+        .hero-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, .2), rgba(10, 10, 14, .95));
+        }
+
+        .hero-inner {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 1200px;
+            max-width: 92%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+            .brand img {
+                height: 46px;
+            }
+
+            .brand h1 {
+                font-size: 28px;
+                margin: 0;
+                letter-spacing: 1px;
+                text-shadow: 0 0 12px rgba(0, 255, 120, .5);
+            }
+
+        .profile {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+        }
+
+        /* MAIN */
+        .main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* LOGIN CARD */
+        .login-card {
+            width: 360px;
+            background: rgba(30, 30, 40, .7);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            backdrop-filter: blur(16px);
+            padding: 32px;
+            box-shadow: 0 0 60px rgba(0, 0, 0, .7), 0 0 20px rgba(0, 255, 120, .06);
+            text-align: center;
+            transition: .25s;
+        }
+
+            .login-card:hover {
+                transform: translateY(-4px);
+            }
+
+            .login-card input {
+                width: 100%;
+                padding: 12px;
+                border-radius: 8px;
+                border: 1px solid #333;
+                background: #0f0f0f;
+                color: #00ff88;
+                font-family: monospace;
+                margin-bottom: 14px;
+            }
+
+            .login-card button {
+                width: 100%;
+                padding: 12px;
+                border: none;
+                border-radius: 8px;
+                background: linear-gradient(90deg, #00ff88, #00ff00);
+                font-weight: bold;
+                cursor: pointer;
+            }
+
+        /* PANEL */
+        .panel {
+            max-width: 1100px;
+            width: 100%;
+            background: rgba(30, 30, 40, .65);
+            border-radius: 16px;
+            padding: 28px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            backdrop-filter: blur(14px);
+            box-shadow: 0 0 50px rgba(0, 0, 0, .6), 0 0 25px rgba(0, 255, 120, .05);
+        }
+
+        /* INPUT ROW */
+        .input-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+            .input-row input {
+                padding: 10px;
+                border-radius: 6px;
+                border: 1px solid #333;
+                background: #181818;
+                color: #00ff88;
+                font-family: monospace;
+            }
+
+            .input-row button {
+                padding: 10px 18px;
+                border: none;
+                border-radius: 6px;
+                background: #00ff88;
+                font-weight: bold;
+                cursor: pointer;
+            }
+
+        /* TABLE */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(20, 20, 20, .7);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #333;
+            font-family: monospace;
+        }
+
+        th {
+            background: #232526;
+            color: #00ff88;
+        }
+
+        tr:hover {
+            background: #1a1a1a;
+        }
+
+        button.remove {
+            background: #ff4b4b;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* MOBILE */
+        @media(max-width:700px) {
+            .input-row {
+                flex-direction: column;
+            }
+
+            table {
+                font-size: 13px;
+            }
+        }
+
+        /* SHOOTER LIGHT */
+        body::after {
+            content: "";
+            position: fixed;
+            right: -120px;
+            bottom: -120px;
+            width: 520px;
+            height: 520px;
+            background: url("/static/Shooter.png") no-repeat;
+            background-size: contain;
+            opacity: .06;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- HERO -->
+    <div class="hero">
+        <img src="/static/Banner.png">
+        <div class="hero-overlay"></div>
+        <div class="hero-inner">
+            <div class="brand">
+                <img src="/static/BSS-Logo.png">
+                <h1>Bright Sky Shooter</h1>
+            </div>
+            <img src="/static/pfp.png" class="profile">
+        </div>
+    </div>
+    <!-- MAIN -->
+    <div class="main">
+        <!-- LOGIN -->
+        <div class="login-card" id="adminLoginBox">
+            <h2>> Admin Login</h2>
+            <form id="adminLoginForm">
+                <input type="password" id="adminPassword" placeholder="Admin Password">
+                <button type="submit">Login</button>
+                <div id="adminLoginError" style="color:#ff5252;margin-top:8px;display:none;"></div>
+            </form>
+        </div>
+        <!-- ADMIN PANEL -->
+        <div id="adminPanel" style="display:none" class="panel">
+            <h2>Password Manager</h2>
+            <form id="addPasswordForm">
+                <div class="input-row">
+                    <input type="text" id="newPassword" placeholder="New Password" required>
+                    <input type="number" id="expireMinutes" placeholder="Expire (hours)">
+                    <button type="submit">Add Password</button>
+                </div>
+            </form>
+            <div id="passwordList"></div>
+        </div>
+    </div>
+    <script>
+        /* ADMIN LOGIN */
+        document.getElementById("adminLoginForm").addEventListener("submit", async e => {
+            e.preventDefault()
+            const pw = adminPassword.value
+            const errorBox = adminLoginError
+            errorBox.style.display = "none"
+            const res = await fetch("/api/admin_login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    password: pw
+                })
+            })
+            const data = await res.json()
+            if (data.success) {
+                adminLoginBox.style.display = "none"
+                adminPanel.style.display = "block"
+                loadPasswords()
+            } else {
+                errorBox.textContent = data.error || "Incorrect admin password"
+                errorBox.style.display = "block"
+            }
+        })
+        /* LOAD PASSWORDS */
+        async function loadPasswords() {
+            const res = await fetch("/api/passwords")
+            const passwords = await res.json()
+            let html = `
+
+                                                            <table>
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Password</th>
+                                                                        <th>Expires</th>
+                                                                        <th>Remove</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+`
+            passwords.forEach(p => {
+                html += `
+
+                                                                    <tr>
+                                                                        <td>${p.pw}</td>
+                                                                        <td>${p.expires}</td>
+                                                                        <td>
+                                                                            <button class="remove" onclick="removePassword(${p.id})">Remove</button>
+                                                                        </td>
+                                                                    </tr>
+`
+            })
+            html += `
+                                                                </tbody>
+                                                            </table>`
+            passwordList.innerHTML = html
+        }
+        /* ADD PASSWORD */
+        addPasswordForm.addEventListener("submit", async e => {
+            e.preventDefault()
+            const pw = newPassword.value
+            const mins = expireMinutes.value
+            await fetch("/api/add_password", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    password: pw,
+                    minutes: mins
+                })
+            })
+            newPassword.value = ""
+            expireMinutes.value = ""
+            loadPasswords()
+        })
+        /* REMOVE PASSWORD */
+        async function removePassword(id) {
+            await fetch("/api/remove_password", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    id: id
+                })
+            })
+
+            loadPasswords()
+        }
+    </script>
+</body>
+</html>
