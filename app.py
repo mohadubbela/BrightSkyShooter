@@ -20,11 +20,11 @@ load_dotenv()
 APP_SECRET = os.environ["APP_SECRET"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
-DB_HOST = os.environ["DB_HOST"]
-DB_NAME = os.environ.get("DB_NAME", "postgres")
-DB_USER = os.environ["DB_USER"]
-DB_PASSWORD = os.environ["DB_PASSWORD"]
-DB_PORT = os.environ.get("DB_PORT", "5432")
+# DB_HOST = os.environ["DB_HOST"]
+# DB_NAME = os.environ.get("DB_NAME", "postgres")
+# DB_USER = os.environ["DB_USER"]
+# DB_PASSWORD = os.environ["DB_PASSWORD"]
+# DB_PORT = os.environ.get("DB_PORT", "5432")
 
 PAGE_SIZE = 100
 
