@@ -211,15 +211,18 @@ def clean(r):
 
 # ---------------- SEARCH (POSTGRES) ----------------
 
-@limiter.limit("20 per minute")
 @app.route("/api/search")
 @login_required
+@limiter.limit("20 per minute")
 def search():
+    conn = None
 
     try:
         q = request.args.get("q", "").strip()
         offset = max(int(request.args.get("offset", 0)), 0)
         like = f"%{q}%"
+
+        print("SEARCH REQUEST q=", q, "offset=", offset)
 
         conn = get_pg()
         cur = conn.cursor()
@@ -229,16 +232,16 @@ def search():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM contacts
-                WHERE "Email" ILIKE %s
-                   OR "FirstName" ILIKE %s
-                   OR "LastName" ILIKE %s
-                   OR "Phone" ILIKE %s
-                   OR "Main_Address__c" ILIKE %s
-            """, (like, like, like, like, like))
+                WHERE "Email" ILIKE %(q)s
+                   OR "FirstName" ILIKE %(q)s
+                   OR "LastName" ILIKE %(q)s
+                   OR "Phone" ILIKE %(q)s
+                   OR "Main_Address__c" ILIKE %(q)s
+            """, {"q": like})
         else:
             cur.execute("SELECT COUNT(*) FROM contacts")
 
-        total = cur.fetchone()[0]   # ✅ FIXED (NO ["count"])
+        total = cur.fetchone()[0]
 
         # ---------------- DATA ----------------
         if q:
@@ -252,13 +255,17 @@ def search():
                     "Birthdate",
                     "Main_Address__c"
                 FROM contacts
-                WHERE "Email" ILIKE %s
-                   OR "FirstName" ILIKE %s
-                   OR "LastName" ILIKE %s
-                   OR "Phone" ILIKE %s
-                   OR "Main_Address__c" ILIKE %s
-                LIMIT %s OFFSET %s
-            """, (like, like, like, like, like, PAGE_SIZE, offset))
+                WHERE "Email" ILIKE %(q)s
+                   OR "FirstName" ILIKE %(q)s
+                   OR "LastName" ILIKE %(q)s
+                   OR "Phone" ILIKE %(q)s
+                   OR "Main_Address__c" ILIKE %(q)s
+                LIMIT %(limit)s OFFSET %(offset)s
+            """, {
+                "q": like,
+                "limit": PAGE_SIZE,
+                "offset": offset
+            })
         else:
             cur.execute("""
                 SELECT
@@ -270,11 +277,13 @@ def search():
                     "Birthdate",
                     "Main_Address__c"
                 FROM contacts
-                LIMIT %s OFFSET %s
-            """, (PAGE_SIZE, offset))
+                LIMIT %(limit)s OFFSET %(offset)s
+            """, {
+                "limit": PAGE_SIZE,
+                "offset": offset
+            })
 
         rows = cur.fetchall()
-        conn.close()
 
         return jsonify({
             "results": [clean(r) for r in rows],
@@ -284,8 +293,18 @@ def search():
         })
 
     except Exception as e:
-        print("SEARCH ERROR:", repr(e))   # ✅ THIS IS CRITICAL
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        print("🔥 SEARCH ERROR:", repr(e))
+        traceback.print_exc()
+
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
+
+    finally:
+        if conn:
+            conn.close()
 
 # ---------------- CONTACT ----------------
 
