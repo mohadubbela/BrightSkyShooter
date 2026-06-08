@@ -216,67 +216,76 @@ def clean(r):
 @login_required
 def search():
 
-    q = request.args.get("q", "").strip()
-    offset = max(int(request.args.get("offset", 0)), 0)
+    try:
+        q = request.args.get("q", "").strip()
+        offset = max(int(request.args.get("offset", 0)), 0)
+        like = f"%{q}%"
 
-    conn = get_pg()
-    cur = conn.cursor()
+        conn = get_pg()
+        cur = conn.cursor()
 
-    like = f"%{q}%"
+        # ---------------- COUNT ----------------
+        if q:
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM contacts
+                WHERE "Email" ILIKE %s
+                   OR "FirstName" ILIKE %s
+                   OR "LastName" ILIKE %s
+                   OR "Phone" ILIKE %s
+                   OR "Main_Address__c" ILIKE %s
+            """, (like, like, like, like, like))
+        else:
+            cur.execute("SELECT COUNT(*) FROM contacts")
 
-    if q:
+        total = cur.fetchone()[0]   # ✅ FIXED (NO ["count"])
 
-        cur.execute("""
-    SELECT COUNT(*) FROM contacts
-    WHERE "Email" ILIKE %s
-       OR "FirstName" ILIKE %s
-       OR "LastName" ILIKE %s
-       OR "Phone" ILIKE %s
-       OR "Main_Address__c" ILIKE %s
-        """, (like, like, like, like, like))
+        # ---------------- DATA ----------------
+        if q:
+            cur.execute("""
+                SELECT
+                    id,
+                    "Email",
+                    "FirstName",
+                    "LastName",
+                    "Phone",
+                    "Birthdate",
+                    "Main_Address__c"
+                FROM contacts
+                WHERE "Email" ILIKE %s
+                   OR "FirstName" ILIKE %s
+                   OR "LastName" ILIKE %s
+                   OR "Phone" ILIKE %s
+                   OR "Main_Address__c" ILIKE %s
+                LIMIT %s OFFSET %s
+            """, (like, like, like, like, like, PAGE_SIZE, offset))
+        else:
+            cur.execute("""
+                SELECT
+                    id,
+                    "Email",
+                    "FirstName",
+                    "LastName",
+                    "Phone",
+                    "Birthdate",
+                    "Main_Address__c"
+                FROM contacts
+                LIMIT %s OFFSET %s
+            """, (PAGE_SIZE, offset))
 
-        total = cur.fetchone()["count"]
+        rows = cur.fetchall()
+        conn.close()
 
-        cur.execute("""
-    SELECT
-        id,
-        "Email",
-        "FirstName",
-        "LastName",
-        "Phone",
-        "Birthdate",
-        "Main_Address__c"
-    FROM contacts
-    WHERE "Email" ILIKE %s
-       OR "FirstName" ILIKE %s
-       OR "LastName" ILIKE %s
-       OR "Phone" ILIKE %s
-       OR "Main_Address__c" ILIKE %s
-    LIMIT %s OFFSET %s
-        """, (like, like, like, like, like, PAGE_SIZE, offset))
+        return jsonify({
+            "results": [clean(r) for r in rows],
+            "total": total,
+            "offset": offset,
+            "page_size": PAGE_SIZE
+        })
 
-    else:
-
-        cur.execute("SELECT COUNT(*) FROM contacts")
-        total = cur.fetchone()["count"]
-
-        cur.execute("""
-            SELECT
-                id, email, name, firstname, lastname,
-                phone, birthdate, main_address__c
-            FROM contacts
-            LIMIT %s OFFSET %s
-        """, (PAGE_SIZE, offset))
-
-    rows = cur.fetchall()
-    conn.close()
-
-    return jsonify({
-        "results": [clean(r) for r in rows],
-        "total": total,
-        "offset": offset,
-        "page_size": PAGE_SIZE
-    })
+    except Exception as e:
+        print("SEARCH ERROR:", repr(e))   # ✅ THIS IS CRITICAL
+        return jsonify({"error": str(e)}), 500
 
 # ---------------- CONTACT ----------------
 
