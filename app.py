@@ -64,8 +64,12 @@ def get_pg():
     )
 
 # ---------------- PASSWORD DB (SQLite kept) ----------------
+os.makedirs(os.path.dirname(PASSWORD_DB), exist_ok=True)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PASSWORD_DB = "/tmp/passwords.db"
+PASSWORD_DB = os.path.join(BASE_DIR, "data", "passwords.db")
+
+os.makedirs(os.path.dirname(PASSWORD_DB), exist_ok=True)
 
 def init_password_db():
     conn = sqlite3.connect(PASSWORD_DB)
