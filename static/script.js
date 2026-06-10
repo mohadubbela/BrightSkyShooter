@@ -29,6 +29,14 @@ function getParams() {
     });
 }
 
+function cleanHtml(text = "") {
+    return String(text)
+        .replace(/<br\s*\/?>/gi, " • ")           // <br> → bullet
+        .replace(/&lt;br&gt;/gi, " • ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 /* ---------------- TOASTS ---------------- */
 
 function showToast(message, success = true) {
@@ -56,7 +64,33 @@ function updateStatus(text) {
     if (statusCard) statusCard.textContent = text;
 }
 
-/* ---------------- SEARCH ---------------- */
+function extractCleanName(contact) {
+    let name = "";
+
+    // Meerdere mogelijke velden proberen
+    if (contact.Name && contact.Name.trim()) {
+        name = contact.Name;
+    } else if (contact.FirstName || contact.LastName) {
+        name = `${contact.FirstName || ""} ${contact.LastName || ""}`.trim();
+    } else if (contact.firstname || contact.lastname) {
+        name = `${contact.firstname || ""} ${contact.lastname || ""}`.trim();
+    } else if (contact.Full_Name__c) {
+        name = contact.Full_Name__c;
+    }
+
+    // Als de "Name" nog vol met adres troep zit, proberen we First+Last te forceren
+    if (name.includes("weg") || name.includes("straat") || name.length > 80) {
+        const cleanFirst = (contact.FirstName || contact.firstname || "").trim();
+        const cleanLast = (contact.LastName || contact.lastname || "").trim();
+        if (cleanFirst || cleanLast) {
+            name = `${cleanFirst} ${cleanLast}`.trim();
+        }
+    }
+
+    return cleanHtml(name || "Onbekend");
+}
+
+/* ==================== LOAD FUNCTIE ==================== */
 
 async function load() {
     if (!authenticated || loading) return;
@@ -68,58 +102,41 @@ async function load() {
     updateStatus("SEARCHING...");
 
     tbody.innerHTML = `
-        <tr>
-            <td colspan="7" style="text-align:center;padding:60px;color:#888">
-                <strong>Searching database...</strong>
-            </td>
-        </tr>
-    `;
+        <tr><td colspan="7" style="text-align:center;padding:60px;color:#888">
+            <strong>Database doorzoeken...</strong>
+        </td></tr>`;
 
     try {
         const res = await fetch("/api/search?" + getParams());
-        if (!res.ok) throw new Error("Search failed");
+        if (!res.ok) throw new Error();
 
         const data = await res.json();
         total = data.total || 0;
         tbody.innerHTML = "";
 
-        if (!data.results || !data.results.length) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" style="text-align:center;padding:60px;color:#888">
-                        No records found
-                    </td>
-                </tr>
-            `;
+        if (!data.results?.length) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:60px;color:#888">Geen resultaten</td></tr>`;
             updateStatus("NO RESULTS");
             loading = false;
             return;
         }
 
-        data.results.forEach((c, index) => {
+        data.results.forEach((c, i) => {
             const tr = document.createElement("tr");
             tr.style.opacity = "0";
-            tr.style.transform = "translateY(6px)";
+            tr.style.transform = "translateY(8px)";
 
-            // === Verbeterde naam logica ===
-            let displayName = "Onbekend";
-
-            if (c.Name && c.Name.trim() !== "") {
-                displayName = c.Name;
-            } else if (c.FirstName || c.LastName) {
-                displayName = `${c.FirstName || ""} ${c.LastName || ""}`.trim();
-            } else if (c.firstname || c.lastname) {
-                displayName = `${c.firstname || ""} ${c.lastname || ""}`.trim();
-            }
+            const cleanName = extractCleanName(c);
+            const cleanAddress = cleanHtml(c.Main_Address__c || c.main_address__c || "");
 
             tr.innerHTML = `
-                <td>${escapeHtml(displayName)}</td>
+                <td><strong>${escapeHtml(cleanName)}</strong></td>
                 <td>${escapeHtml(c.LastName || c.lastname || "")}</td>
                 <td>${escapeHtml(c.FirstName || c.firstname || "")}</td>
                 <td>${escapeHtml(c.Email || c.email || "")}</td>
                 <td>${escapeHtml(c.Phone || c.phone || "")}</td>
                 <td>${escapeHtml(c.Birthdate || c.birthdate || "")}</td>
-                <td>${escapeHtml(cleanAddress(c.Main_Address__c || c.main_address__c || ""))}</td>
+                <td style="max-width:280px;white-space:pre-line">${escapeHtml(cleanAddress)}</td>
             `;
 
             const contactId = c.id || c.Id;
@@ -128,13 +145,11 @@ async function load() {
 
             tbody.appendChild(tr);
 
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                    tr.style.transition = ".18s ease";
-                    tr.style.opacity = "1";
-                    tr.style.transform = "translateY(0px)";
-                }, index * 4);
-            });
+            setTimeout(() => {
+                tr.style.transition = "all 0.2s ease";
+                tr.style.opacity = "1";
+                tr.style.transform = "translateY(0)";
+            }, i * 6);
         });
 
         const elapsed = Math.round(performance.now() - start);
@@ -142,10 +157,10 @@ async function load() {
         const pages = Math.max(1, Math.ceil(total / pageSize));
         updateStatus(`${total.toLocaleString()} records • Page ${page}/${pages} • ${elapsed}ms`);
 
-    } catch (err) {
-        console.error(err);
-        showToast("Database connection error", false);
-        updateStatus("OFFLINE");
+    } catch (e) {
+        console.error(e);
+        showToast("Database error", false);
+        updateStatus("ERROR");
     }
 
     loading = false;
