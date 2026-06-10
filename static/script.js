@@ -15,9 +15,10 @@ function escapeHtml(text = "") {
         .replaceAll(">", "&gt;");
 }
 
-function cleanAddress(text = "") {
+function cleanHtml(text = "") {
     return String(text)
-        .replace(/<br\s*\/?>/gi, ", ")
+        .replace(/<br\s*\/?>/gi, " • ")
+        .replace(/&lt;br&gt;/gi, " • ")
         .replace(/\s+/g, " ")
         .trim();
 }
@@ -27,14 +28,6 @@ function getParams() {
         q: document.getElementById("search").value.trim(),
         offset: offset
     });
-}
-
-function cleanHtml(text = "") {
-    return String(text)
-        .replace(/<br\s*\/?>/gi, " • ")           // <br> → bullet
-        .replace(/&lt;br&gt;/gi, " • ")
-        .replace(/\s+/g, " ")
-        .trim();
 }
 
 /* ---------------- TOASTS ---------------- */
@@ -67,7 +60,7 @@ function updateStatus(text) {
 function extractCleanName(contact) {
     let name = "";
 
-    // Meerdere mogelijke velden proberen
+    // Try multiple possible fields
     if (contact.Name && contact.Name.trim()) {
         name = contact.Name;
     } else if (contact.FirstName || contact.LastName) {
@@ -78,7 +71,7 @@ function extractCleanName(contact) {
         name = contact.Full_Name__c;
     }
 
-    // Als de "Name" nog vol met adres troep zit, proberen we First+Last te forceren
+    // If the Name still contains address junk, force First + Last
     if (name.includes("weg") || name.includes("straat") || name.length > 80) {
         const cleanFirst = (contact.FirstName || contact.firstname || "").trim();
         const cleanLast = (contact.LastName || contact.lastname || "").trim();
@@ -87,10 +80,10 @@ function extractCleanName(contact) {
         }
     }
 
-    return cleanHtml(name || "Onbekend");
+    return cleanHtml(name || "Unknown");
 }
 
-/* ==================== LOAD FUNCTIE ==================== */
+/* ==================== LOAD FUNCTION ==================== */
 
 async function load() {
     if (!authenticated || loading) return;
@@ -103,7 +96,7 @@ async function load() {
 
     tbody.innerHTML = `
         <tr><td colspan="7" style="text-align:center;padding:60px;color:#888">
-            <strong>Database doorzoeken...</strong>
+            <strong>Searching database...</strong>
         </td></tr>`;
 
     try {
@@ -115,7 +108,7 @@ async function load() {
         tbody.innerHTML = "";
 
         if (!data.results?.length) {
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:60px;color:#888">Geen resultaten</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:60px;color:#888">No results found</td></tr>`;
             updateStatus("NO RESULTS");
             loading = false;
             return;
@@ -186,7 +179,7 @@ async function openDetails(id) {
 
         Object.entries(data).forEach(([key, value]) => {
             if (value == null) value = "";
-            if (key.toLowerCase().includes("address")) value = cleanAddress(value);
+            if (key.toLowerCase().includes("address")) value = cleanHtml(value);
             html += `
                 <tr>
                     <th style="text-align:left;padding:12px 8px;width:180px">${escapeHtml(key)}</th>
