@@ -40,7 +40,7 @@ CORS(app, resources={r"/api/*": {"origins": ["*"]}})
 def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
 
-# ---------------- PASSWORD DB (local) ----------------
+# ---------------- PASSWORD DB ----------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PASSWORD_DB = os.path.join(BASE_DIR, "data", "passwords.db")
@@ -126,10 +126,7 @@ def get_passwords():
     cur.execute("SELECT id, expires FROM passwords")
     rows = cur.fetchall()
     conn.close()
-
-    return jsonify([
-        {"id": r[0], "expires": r[1]} for r in rows
-    ])
+    return jsonify([{"id": r[0], "expires": r[1]} for r in rows])
 
 
 @app.route("/api/add_password", methods=["POST"])
@@ -138,7 +135,6 @@ def add_password():
     data = request.get_json()
     pw = data["password"]
     minutes = data.get("minutes")
-
     expires = int(time.time()) + int(minutes) * 3600 if minutes else None
 
     conn = sqlite3.connect(PASSWORD_DB)
@@ -149,7 +145,6 @@ def add_password():
     )
     conn.commit()
     conn.close()
-
     return jsonify({"success": True})
 
 
@@ -164,7 +159,7 @@ def remove_password():
     conn.close()
     return jsonify({"success": True})
 
-# ---------------- SEARCH ----------------
+# ---------------- SEARCH (Improved Name display) ----------------
 
 @limiter.limit("20 per minute")
 @app.route("/api/search")
@@ -174,32 +169,40 @@ def search():
     try:
         q = request.args.get("q", "").strip()
         offset = max(int(request.args.get("offset", 0)), 0)
-        like = f"%{q}%"
 
         conn = get_db()
         cur = conn.cursor()
 
         if q:
+            like = f"%{q}%"
             cur.execute("""
                 SELECT COUNT(*) as count FROM contacts
-                WHERE "Email" ILIKE %s OR "FirstName" ILIKE %s OR "LastName" ILIKE %s 
-                   OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s
+                WHERE "Email" ILIKE %s 
+                   OR "FirstName" ILIKE %s 
+                   OR "LastName" ILIKE %s 
+                   OR "Phone" ILIKE %s 
+                   OR "Main_Address__c" ILIKE %s
             """, (like, like, like, like, like))
             total = cur.fetchone()["count"]
 
             cur.execute("""
                 SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
                 FROM contacts
-                WHERE "Email" ILIKE %s OR "FirstName" ILIKE %s OR "LastName" ILIKE %s 
-                   OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s
+                WHERE "Email" ILIKE %s 
+                   OR "FirstName" ILIKE %s 
+                   OR "LastName" ILIKE %s 
+                   OR "Phone" ILIKE %s 
+                   OR "Main_Address__c" ILIKE %s
                 LIMIT %s OFFSET %s
             """, (like, like, like, like, like, PAGE_SIZE, offset))
         else:
             cur.execute("SELECT COUNT(*) as count FROM contacts")
             total = cur.fetchone()["count"]
+
             cur.execute("""
                 SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
-                FROM contacts LIMIT %s OFFSET %s
+                FROM contacts 
+                LIMIT %s OFFSET %s
             """, (PAGE_SIZE, offset))
 
         rows = cur.fetchall()
@@ -212,13 +215,15 @@ def search():
         })
 
     except Exception as e:
-        print("Search error:", e)
-        return jsonify({"error": "Database error"}), 500
+        import traceback
+        print("🔥 SEARCH ERROR:")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
     finally:
         if conn:
             conn.close()
 
-# ---------------- CONTACT ----------------
+# ---------------- CONTACT DETAILS ----------------
 
 @app.route("/api/contact/<id>")
 @login_required
@@ -255,5 +260,5 @@ def admin():
 # ---------------- START ----------------
 
 if __name__ == "__main__":
-    print("🚀 BrightSky Intelligence - Remote Database")
+    print("🚀 BrightSky Intelligence - Remote Database Mode")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
