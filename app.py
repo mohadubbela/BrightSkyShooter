@@ -18,7 +18,7 @@ load_dotenv()
 
 APP_SECRET = os.environ["APP_SECRET"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
-DATABASE_URL = os.environ["DATABASE_URL"]   # Must be set
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 PAGE_SIZE = 100
 
@@ -72,6 +72,14 @@ def login_required(f):
         return f(*args, **kwargs)
     return wrapper
 
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("admin_authenticated"):
+            return jsonify({"error": "unauthorized", "message": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
 # ---------------- LOGIN ----------------
 
 @limiter.limit("5 per minute")
@@ -107,6 +115,54 @@ def login():
             session["authenticated"] = True
             return jsonify({"success": True})
     return jsonify({"success": False}), 401
+
+# ---------------- ADMIN PASSWORD MANAGEMENT ----------------
+
+@app.route("/api/passwords")
+@admin_required
+def get_passwords():
+    conn = sqlite3.connect(PASSWORD_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT id, expires FROM passwords")
+    rows = cur.fetchall()
+    conn.close()
+
+    return jsonify([
+        {"id": r[0], "expires": r[1]} for r in rows
+    ])
+
+
+@app.route("/api/add_password", methods=["POST"])
+@admin_required
+def add_password():
+    data = request.get_json()
+    pw = data["password"]
+    minutes = data.get("minutes")
+
+    expires = int(time.time()) + int(minutes) * 3600 if minutes else None
+
+    conn = sqlite3.connect(PASSWORD_DB)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO passwords (password_hash, expires) VALUES (?, ?)",
+        (generate_password_hash(pw), expires)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True})
+
+
+@app.route("/api/remove_password", methods=["POST"])
+@admin_required
+def remove_password():
+    data = request.get_json()
+    conn = sqlite3.connect(PASSWORD_DB)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM passwords WHERE id=?", (data["id"],))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 # ---------------- SEARCH ----------------
 
@@ -162,7 +218,7 @@ def search():
         if conn:
             conn.close()
 
-# ---------------- CONTACT DETAILS ----------------
+# ---------------- CONTACT ----------------
 
 @app.route("/api/contact/<id>")
 @login_required
@@ -199,5 +255,5 @@ def admin():
 # ---------------- START ----------------
 
 if __name__ == "__main__":
-    print("🚀 BrightSky Intelligence - Remote Database Mode")
+    print("🚀 BrightSky Intelligence - Remote Database")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
