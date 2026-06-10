@@ -159,7 +159,7 @@ def remove_password():
     conn.close()
     return jsonify({"success": True})
 
-# ---------------- SEARCH (Improved Name display) ----------------
+# ---------------- IMPROVED RELEVANCE SEARCH ----------------
 
 @limiter.limit("20 per minute")
 @app.route("/api/search")
@@ -174,41 +174,71 @@ def search():
         cur = conn.cursor()
 
         if q:
-            like = f"%{q}%"
-            cur.execute("""
+            terms = [term.strip() for term in q.split() if term.strip()]
+
+            # Build conditions
+            conditions = []
+            params = []
+
+            for term in terms:
+                like = f"%{term}%"
+                conditions.append("""
+                    ("Name" ILIKE %s OR "FirstName" ILIKE %s OR "LastName" ILIKE %s 
+                     OR "Email" ILIKE %s OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s)
+                """)
+                params.extend([like] * 6)
+
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+            # Relevance scoring + ordering
+            score_case = """
+                CASE 
+                    WHEN "FirstName" ILIKE %s OR "Name" ILIKE %s THEN 100
+                    WHEN "LastName" ILIKE %s THEN 80
+                    WHEN "Main_Address__c" ILIKE %s THEN 60
+                    WHEN "Email" ILIKE %s OR "Phone" ILIKE %s THEN 40
+                    ELSE 10
+                END AS relevance
+            """
+
+            # Add main search term for scoring
+            main_term = f"%{terms[0]}%" if terms else "%%"
+
+            # Count total
+            cur.execute(f"""
                 SELECT COUNT(*) as count FROM contacts
-                WHERE "Email" ILIKE %s 
-                   OR "FirstName" ILIKE %s 
-                   OR "LastName" ILIKE %s 
-                   OR "Phone" ILIKE %s 
-                   OR "Main_Address__c" ILIKE %s
-            """, (like, like, like, like, like))
+                WHERE {where_clause}
+            """, params)
             total = cur.fetchone()["count"]
 
-            cur.execute("""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
+            # Results with ordering
+            cur.execute(f"""
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", 
+                       "Main_Address__c", "Name",
+                       {score_case} 
                 FROM contacts
-                WHERE "Email" ILIKE %s 
-                   OR "FirstName" ILIKE %s 
-                   OR "LastName" ILIKE %s 
-                   OR "Phone" ILIKE %s 
-                   OR "Main_Address__c" ILIKE %s
+                WHERE {where_clause}
+                ORDER BY relevance DESC, "FirstName" ASC, "LastName" ASC
                 LIMIT %s OFFSET %s
-            """, (like, like, like, like, like, PAGE_SIZE, offset))
+            """, params + [main_term]*6 + [PAGE_SIZE, offset])
+
         else:
+            # Default: newest or alphabetical
             cur.execute("SELECT COUNT(*) as count FROM contacts")
             total = cur.fetchone()["count"]
 
             cur.execute("""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", 
+                       "Main_Address__c", "Name"
                 FROM contacts 
+                ORDER BY "FirstName" ASC, "LastName" ASC
                 LIMIT %s OFFSET %s
             """, (PAGE_SIZE, offset))
 
         rows = cur.fetchall()
 
         return jsonify({
-            "results": [{k: (v if v is not None else "") for k, v in r.items()} for r in rows],
+            "results": [{k: (v if v is not None else "") for k, v in r.items() if k != "relevance"} for r in rows],
             "total": total,
             "offset": offset,
             "page_size": PAGE_SIZE
