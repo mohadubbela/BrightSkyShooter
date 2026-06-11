@@ -30,11 +30,11 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set")
 
-# SECURITY FIX #1: Admin password should be hashed, not stored in plaintext
-# Store the hash of the admin password instead
-ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
-if not ADMIN_PASSWORD_HASH:
-    raise ValueError("ADMIN_PASSWORD_HASH environment variable not set (use generate_password_hash() to create)")
+# SECURITY FIX #1: Admin password stored as plain text in env (as per user requirement)
+# NOTE: This is less secure than hashing, but per user request we use plain text comparison
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    raise ValueError("ADMIN_PASSWORD environment variable not set")
 
 PAGE_SIZE = 100
 MAX_EXPIRY_MINUTES = 525600  # 1 year
@@ -181,7 +181,7 @@ def admin_required(f):
 @limiter.limit("5 per minute")
 @app.route("/api/admin_login", methods=["POST"])
 def admin_login():
-    """Admin login with hashed password comparison"""
+    """Admin login with password comparison"""
     try:
         data = request.get_json()
         if not data or "password" not in data:
@@ -189,8 +189,8 @@ def admin_login():
         
         password = data.get("password", "")
         
-        # SECURITY FIX #5: Use check_password_hash instead of plaintext comparison
-        if check_password_hash(ADMIN_PASSWORD_HASH, password):
+        # SECURITY FIX #5: Compare password directly (as per user requirement)
+        if password == ADMIN_PASSWORD:
             session.permanent = True
             session["admin_authenticated"] = True
             logger.info(f"Admin login successful from {get_remote_address()}")
