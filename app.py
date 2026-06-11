@@ -84,7 +84,7 @@ def validate_password_input(password):
 
 def validate_expiry_minutes(minutes):
     """Validate expiry time input"""
-    if minutes is None:
+    if minutes is None or minutes == "":
         return True, None
     try:
         minutes = int(minutes)
@@ -95,7 +95,7 @@ def validate_expiry_minutes(minutes):
         return False, "Expiry minutes must be positive"
     if minutes > MAX_EXPIRY_MINUTES:
         return False, f"Expiry minutes cannot exceed {MAX_EXPIRY_MINUTES}"
-    return True, None
+    return True, minutes
 
 def validate_id_input(id_value):
     """Validate that id is a valid integer"""
@@ -284,12 +284,13 @@ def add_password():
             return jsonify({"error": error_msg}), 400
         
         minutes = data.get("minutes")
-        valid, error_msg = validate_expiry_minutes(minutes)
+        valid, minutes_int = validate_expiry_minutes(minutes)
         if not valid:
-            return jsonify({"error": error_msg}), 400
+            return jsonify({"error": minutes_int}), 400
         
         # SECURITY FIX #9: Fix expiry calculation (was *3600, should be *60)
-        expires = int(time.time()) + minutes * 60 if minutes else None
+        # Now minutes_int is either None or an actual integer
+        expires = int(time.time()) + minutes_int * 60 if minutes_int else None
         created_at = int(time.time())
         created_ip = get_remote_address()
 
@@ -309,7 +310,7 @@ def add_password():
         logger.error(f"Add password error: {e}")
         return jsonify({"error": "Database error"}), 500
     except Exception as e:
-        logger.error(f"Add password error: {type(e).__name__}")
+        logger.error(f"Add password error: {type(e).__name__}: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 
