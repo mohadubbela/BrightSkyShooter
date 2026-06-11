@@ -98,11 +98,21 @@ def validate_expiry_minutes(minutes):
     return True, minutes
 
 def validate_id_input(id_value):
-    """Validate that id is a valid integer"""
+    """Validate ID - supports Salesforce-style alphanumeric IDs (15 or 18 chars) + numeric IDs"""
+    if not id_value:
+        return False, "ID cannot be empty"
+    
+    id_str = str(id_value).strip()
+    
+    # Salesforce ID format (15 or 18 alphanumeric characters)
+    if len(id_str) in (15, 18) and id_str.isalnum():
+        return True, id_str
+    
+    # Numeric fallback
     try:
-        int_id = int(id_value)
+        int_id = int(id_str)
         if int_id <= 0:
-            return False, "ID must be a positive integer"
+            return False, "ID must be positive"
         return True, int_id
     except (ValueError, TypeError):
         return False, "Invalid ID format"
@@ -479,37 +489,43 @@ def search():
 @app.route("/api/contact/<id>")
 @login_required
 def contact(id):
-    """Get contact details with input validation"""
+    """Get contact details with support for Salesforce-style IDs"""
     conn = None
     try:
-        # SECURITY FIX #15: Validate contact ID
+        # SECURITY FIX: Support Salesforce alphanumeric IDs (e.g. 0034L0000036bNhQAI)
         valid, id_value = validate_id_input(id)
         if not valid:
+            logger.warning(f"Invalid contact ID format attempted: {id}")
             return jsonify({"error": "Invalid contact ID"}), 400
-        
+
         conn = get_db()
         cur = conn.cursor()
+        
+        # Use parameterized query for Postgres
         cur.execute('SELECT * FROM contacts WHERE id = %s', (id_value,))
         row = cur.fetchone()
 
         if not row:
+            logger.warning(f"Contact not found with ID: {id_value}")
             return jsonify({"error": "not found"}), 404
 
-        return jsonify({k: (v if v is not None else "") for k, v in row.items()})
+        # Clean null values
+        result = {k: (v if v is not None else "") for k, v in row.items()}
+
+        return jsonify(result)
 
     except ValueError:
+        logger.warning(f"ValueError in contact endpoint for ID: {id}")
         return jsonify({"error": "Invalid contact ID"}), 400
     except psycopg.Error as e:
-        logger.error(f"Contact database error: {type(e).__name__}")
-        # SECURITY FIX #16: Don't expose detailed error messages
+        logger.error(f"Contact database error for ID {id}: {type(e).__name__}")
         return jsonify({"error": "Database error"}), 500
     except Exception as e:
-        logger.error(f"Contact error: {type(e).__name__}")
+        logger.error(f"Contact error for ID {id}: {type(e).__name__} - {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
     finally:
         if conn:
             conn.close()
-
 # ================= HEALTH CHECK ENDPOINT =================
 
 @app.route("/api/health")
