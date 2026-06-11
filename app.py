@@ -161,8 +161,6 @@ def remove_password():
 
 # ---------------- IMPROVED RELEVANCE SEARCH ----------------
 
-# ---------------- IMPROVED RELEVANCE SEARCH ----------------
-
 @limiter.limit("20 per minute")
 @app.route("/api/search")
 @login_required
@@ -175,62 +173,8 @@ def search():
         conn = get_db()
         cur = conn.cursor()
 
-        if q:
-            terms = [term.strip() for term in q.split() if term.strip()]
-
-            conditions = []
-            params = []
-
-            for term in terms:
-                like = f"%{term}%"
-                conditions.append("""
-                    ("FirstName" ILIKE %s OR "LastName" ILIKE %s 
-                     OR "Email" ILIKE %s OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s)
-                """)
-                params.extend([like] * 5)
-
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
-
-            # Relevance scoring (zonder "Name" kolom)
-            score_case = """
-                CASE 
-                    WHEN "FirstName" ILIKE %s THEN 100
-                    WHEN "LastName" ILIKE %s THEN 80
-                    WHEN "Main_Address__c" ILIKE %s THEN 60
-                    WHEN "Email" ILIKE %s OR "Phone" ILIKE %s THEN 40
-                    ELSE 10
-                END AS relevance
-            """
-
-            main_term = f"%{terms[0]}%" if terms else "%%"
-
-            # Count total
-            cur.execute(f"""
-                SELECT COUNT(*) as count FROM contacts
-                WHERE {where_clause}
-            """, params)
-            total = cur.fetchone()["count"]
-
-            # Results with ordering
-            cur.execute(f"""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", 
-                       "Main_Address__c"
-                FROM contacts
-                WHERE {where_clause}
-                ORDER BY 
-                    CASE 
-                        WHEN "FirstName" ILIKE %s THEN 100
-                        WHEN "LastName" ILIKE %s THEN 80
-                        WHEN "Main_Address__c" ILIKE %s THEN 60
-                        WHEN "Email" ILIKE %s OR "Phone" ILIKE %s THEN 40
-                        ELSE 10
-                    END DESC,
-                    "FirstName" ASC, "LastName" ASC
-                LIMIT %s OFFSET %s
-            """, params + [main_term] * 5 + [PAGE_SIZE, offset])
-
-        else:
-            # Default sorting
+        if not q:
+            # No search query → return simple alphabetical paginated list
             cur.execute("SELECT COUNT(*) as count FROM contacts")
             total = cur.fetchone()["count"]
 
@@ -241,6 +185,64 @@ def search():
                 ORDER BY "FirstName" ASC, "LastName" ASC
                 LIMIT %s OFFSET %s
             """, (PAGE_SIZE, offset))
+
+        else:
+            terms = [term.strip() for term in q.split() if term.strip()]
+            if not terms:
+                return jsonify({
+                    "results": [], 
+                    "total": 0, 
+                    "offset": offset, 
+                    "page_size": PAGE_SIZE
+                })
+
+            # Build WHERE conditions - each term must appear somewhere (AND logic)
+            conditions = []
+            params = []
+            for term in terms:
+                like = f"%{term}%"
+                conditions.append("""
+                    ("FirstName" ILIKE %s OR "LastName" ILIKE %s 
+                     OR "Email" ILIKE %s OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s)
+                """)
+                params.extend([like] * 5)
+
+            where_clause = " AND ".join(conditions)
+
+            # Count total matching records
+            cur.execute(f"""
+                SELECT COUNT(*) as count FROM contacts
+                WHERE {where_clause}
+            """, params)
+            total = cur.fetchone()["count"]
+
+            # Main search query with improved relevance scoring
+            # This makes the search much more specific (e.g. "elize stegeman" returns better results)
+            cur.execute(f"""
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", 
+                       "Main_Address__c"
+                FROM contacts
+                WHERE {where_clause}
+                ORDER BY 
+                    CASE 
+                        WHEN "FirstName" ILIKE %s OR "LastName" ILIKE %s THEN 200   -- Strong name match
+                        WHEN ("FirstName" || ' ' || "LastName") ILIKE %s THEN 150   -- Full name match bonus
+                        WHEN "Email" ILIKE %s THEN 100
+                        WHEN "Main_Address__c" ILIKE %s THEN 60
+                        ELSE 10
+                    END DESC,
+                    "FirstName" ASC, 
+                    "LastName" ASC,
+                    id ASC
+                LIMIT %s OFFSET %s
+            """, 
+            params + [
+                f"%{terms[0]}%", f"%{terms[0]}%",     # FirstName / LastName priority
+                f"%{q}%",                             # Full name match
+                f"%{q}%",                             # Email
+                f"%{q}%",                             # Address
+                PAGE_SIZE, offset
+            ])
 
         rows = cur.fetchall()
 
