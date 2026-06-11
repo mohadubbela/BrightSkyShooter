@@ -48,7 +48,7 @@ app.secret_key = APP_SECRET
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") == "production",  # True in production
-    SESSION_COOKIE_SAMESITE="Strict",
+    SESSION_COOKIE_SAMESITE="Lax",  # Changed from Strict to Lax for better cross-device compatibility
     PERMANENT_SESSION_LIFETIME=3600,  # 1 hour session timeout
     SESSION_REFRESH_EACH_REQUEST=True
 )
@@ -60,9 +60,15 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
-# SECURITY FIX #3: Restrict CORS to specific origins in production
+# SECURITY FIX #3: Restrict CORS to specific origins and allow credentials
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
+CORS(
+    app, 
+    resources={r"/api/*": {"origins": ALLOWED_ORIGINS}},
+    supports_credentials=True,  # Allow session cookies to be sent with CORS requests
+    allow_headers=["Content-Type"],
+    methods=["GET", "POST", "OPTIONS"]
+)
 
 # ================= INPUT VALIDATION =================
 
@@ -517,9 +523,8 @@ def home():
     return app.send_static_file("index.html")
 
 @app.route("/admin")
-@admin_required
 def admin():
-    """Admin panel - requires authentication"""
+    """Admin panel - serves HTML directly (authentication handled client-side in the HTML)"""
     return app.send_static_file("admin.html")
 
 # ================= ERROR HANDLERS =================
