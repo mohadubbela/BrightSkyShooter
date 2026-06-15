@@ -395,32 +395,29 @@ def search():
         # 1. EMPTY QUERY
         # =========================
         if not q:
-            cur.execute("SELECT COUNT(*) as count FROM contacts")
+            cur.execute('SELECT COUNT(*) as count FROM contacts')
             total = cur.fetchone()["count"]
 
             cur.execute("""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
-                       "Main_Address__c"
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
                 FROM contacts
                 ORDER BY "FirstName" ASC, "LastName" ASC
                 LIMIT %s OFFSET %s
             """, (PAGE_SIZE, offset))
 
-            rows = cur.fetchall()
             return jsonify({
-                "results": clean_rows(rows),
+                "results": clean_rows(cur.fetchall()),
                 "total": total,
                 "offset": offset,
                 "page_size": PAGE_SIZE
             })
 
         # =========================
-        # 2. DATE SEARCH FIX (2025-01-13)
+        # 2. DATE SEARCH
         # =========================
         if re.match(r"^\d{4}-\d{2}-\d{2}$", q):
             cur.execute("""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
-                       "Main_Address__c"
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
                 FROM contacts
                 WHERE "Birthdate" = %s
                 LIMIT 200
@@ -435,44 +432,51 @@ def search():
             })
 
         # =========================
-        # 3. ADDRESS MODE FIX (Tempelberg 116)
+        # 3. ADDRESS DETECTION (FIXED LOGIC)
         # =========================
-        if any(c.isdigit() for c in q) and any(c.isalpha() for c in q):
+        ql = q.lower()
+        is_address = (
+            any(c.isdigit() for c in ql)
+            and any(c.isalpha() for c in ql)
+            and len(q.split()) >= 2
+        )
+
+        if is_address:
             like = f"%{q}%"
 
             cur.execute("""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
-                       "Main_Address__c"
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
                 FROM contacts
                 WHERE "Main_Address__c" ILIKE %s
+                ORDER BY
+                    CASE WHEN "Main_Address__c" ILIKE %s THEN 100 ELSE 10 END DESC
                 LIMIT 200
-            """, (like,))
+            """, (like, like))
 
-            rows = cur.fetchall()
             return jsonify({
-                "results": clean_rows(rows),
-                "total": len(rows),
+                "results": clean_rows(cur.fetchall()),
+                "total": len(cur.fetchall()),
                 "offset": offset,
                 "page_size": PAGE_SIZE
             })
 
         # =========================
-        # 4. NORMAL SEARCH
+        # 4. TOKENIZE
         # =========================
-        terms = []
-        for term in q.split():
-            sanitized = sanitize_search_term(term)
-            if sanitized:
-                terms.append(sanitized)
+        terms = [
+            sanitize_search_term(t)
+            for t in q.split()
+        ]
+        terms = [t for t in terms if t]
 
         if not terms:
-            return jsonify({"results": [], "total": 0, "offset": offset, "page_size": PAGE_SIZE})
+            return jsonify({"results": [], "total": 0})
 
         if len(terms) > 10:
             return jsonify({"error": "Too many search terms (max 10)"}), 400
 
         # =========================
-        # 5. FIXED WHERE LOGIC (IMPORTANT)
+        # 5. BUILD WHERE (FIXED LOGIC)
         # =========================
         conditions = []
         params = []
@@ -491,10 +495,9 @@ def search():
             """)
             params.extend([like] * 5)
 
-        # IMPORTANT FIX:
-        # Instead of forcing ALL terms (AND),
-        # we use a softer relevance-based OR grouping
-        where_clause = " AND ".join(conditions)
+        # CRITICAL FIX:
+        # OR between terms (not AND → dat was jouw “kris kras bug”)
+        where_clause = " OR ".join(conditions)
 
         # =========================
         # 6. COUNT
@@ -507,19 +510,19 @@ def search():
         total = cur.fetchone()["count"]
 
         # =========================
-        # 7. FETCH WITH BETTER RANKING
+        # 7. FETCH + RANKING
         # =========================
         cur.execute(f"""
-            SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
-                   "Main_Address__c"
+            SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", "Main_Address__c"
             FROM contacts
             WHERE {where_clause}
             ORDER BY
                 CASE
+                    WHEN "FirstName" ILIKE %s AND "LastName" ILIKE %s THEN 300
                     WHEN "FirstName" ILIKE %s OR "LastName" ILIKE %s THEN 200
                     WHEN ("FirstName" || ' ' || "LastName") ILIKE %s THEN 150
-                    WHEN "Email" ILIKE %s THEN 100
-                    WHEN "Main_Address__c" ILIKE %s THEN 60
+                    WHEN "Email" ILIKE %s THEN 120
+                    WHEN "Main_Address__c" ILIKE %s THEN 80
                     ELSE 10
                 END DESC,
                 "FirstName" ASC,
@@ -528,7 +531,8 @@ def search():
             LIMIT %s OFFSET %s
         """,
         params + [
-            f"%{terms[0]}%", f"%{terms[0]}%",
+            f"%{terms[0]}%", f"%{terms[-1]}%",
+            f"%{terms[0]}%", f"%{terms[-1]}%",
             f"%{q}%",
             f"%{q}%",
             f"%{q}%",
@@ -543,10 +547,6 @@ def search():
             "offset": offset,
             "page_size": PAGE_SIZE
         })
-
-    except ValueError as e:
-        logger.warning(f"Invalid search parameters: {e}")
-        return jsonify({"error": "Invalid parameters"}), 400
 
     except Exception as e:
         logger.error(f"Search error: {type(e).__name__}: {str(e)}")
