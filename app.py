@@ -61,7 +61,7 @@ limiter = Limiter(
 )
 
 # SECURITY FIX #3: Restrict CORS to specific origins and allow credentials
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5000").split(",")
 CORS(
     app, 
     resources={r"/api/*": {"origins": ALLOWED_ORIGINS}},
@@ -219,10 +219,9 @@ def admin_login():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@limiter.limit("5 per minute")
 @app.route("/api/login", methods=["POST"])
+@limiter.limit("5 per minute")
 def login():
-    """User login with password validation"""
     try:
         data = request.get_json()
         if not data or "password" not in data:
@@ -230,24 +229,34 @@ def login():
 
         pw = data["password"]
         current_time = time.time()
-        
+
+        # ✅ Allow admin password directly
+        if pw == ADMIN_PASSWORD:
+            session.permanent = True
+            session["authenticated"] = True
+            session["admin_authenticated"] = True  # optional but useful distinction
+            return jsonify({"success": True})
+
         conn = sqlite3.connect(PASSWORD_DB)
         cur = conn.cursor()
-        cur.execute("SELECT password_hash, expires FROM passwords WHERE expires IS NULL OR expires > ?", (int(current_time),))
+        cur.execute(
+            "SELECT password_hash, expires FROM passwords WHERE expires IS NULL OR expires > ?",
+            (int(current_time),)
+        )
         rows = cur.fetchall()
         conn.close()
 
         for h, exp in rows:
             if check_password_hash(h, pw):
-                # SECURITY FIX #6: Verify expiry before creating session
                 if exp and current_time > exp:
                     return jsonify({"success": False, "error": "expired"}), 401
-                
+
                 session.permanent = True
                 session["authenticated"] = True
                 return jsonify({"success": True})
-        
+
         return jsonify({"success": False}), 401
+
     except Exception as e:
         logger.error(f"Login error: {type(e).__name__}")
         return jsonify({"error": "Internal server error"}), 500
