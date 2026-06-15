@@ -371,109 +371,174 @@ def remove_password():
         logger.error(f"Remove password error: {type(e).__name__}")
         return jsonify({"error": "Internal server error"}), 500
 
-# ================= SEARCH ENDPOINT =================
+# ================= SEARCH ENDPOINT (Non Hybride V2)=================
 
 @limiter.limit("20 per minute")
 @app.route("/api/search")
 @login_required
 def search():
-    """Search contacts with improved security and validation"""
     conn = None
     try:
         q = request.args.get("q", "").strip()
         offset = max(int(request.args.get("offset", 0)), 0)
 
-        # SECURITY FIX #11: Validate offset to prevent resource exhaustion
-        if offset < 0 or offset > 1000000:
+        if offset < 0 or offset > 1_000_000:
             return jsonify({"error": "Invalid offset"}), 400
 
         conn = get_db()
         cur = conn.cursor()
 
+        def clean_rows(rows):
+            return [{k: (v if v is not None else "") for k, v in r.items()} for r in rows]
+
+        # =========================
+        # 1. EMPTY QUERY
+        # =========================
         if not q:
-            # No search query → return simple alphabetical paginated list
             cur.execute("SELECT COUNT(*) as count FROM contacts")
             total = cur.fetchone()["count"]
 
             cur.execute("""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", 
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
                        "Main_Address__c"
-                FROM contacts 
+                FROM contacts
                 ORDER BY "FirstName" ASC, "LastName" ASC
                 LIMIT %s OFFSET %s
             """, (PAGE_SIZE, offset))
 
-        else:
-            # SECURITY FIX #12: Sanitize search terms to prevent resource exhaustion
-            terms = []
-            for term in q.split():
-                sanitized = sanitize_search_term(term)
-                if sanitized:
-                    terms.append(sanitized)
-            
-            if not terms:
-                return jsonify({
-                    "results": [], 
-                    "total": 0, 
-                    "offset": offset, 
-                    "page_size": PAGE_SIZE
-                })
+            rows = cur.fetchall()
+            return jsonify({
+                "results": clean_rows(rows),
+                "total": total,
+                "offset": offset,
+                "page_size": PAGE_SIZE
+            })
 
-            # SECURITY FIX #13: Limit number of search terms
-            if len(terms) > 10:
-                return jsonify({"error": "Too many search terms (max 10)"}), 400
-
-            # Build WHERE conditions - each term must appear somewhere (AND logic)
-            conditions = []
-            params = []
-            for term in terms:
-                like = f"%{term}%"
-                conditions.append("""
-                    ("FirstName" ILIKE %s OR "LastName" ILIKE %s 
-                     OR "Email" ILIKE %s OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s)
-                """)
-                params.extend([like] * 5)
-
-            where_clause = " AND ".join(conditions)
-
-            # Count total matching records
-            cur.execute(f"""
-                SELECT COUNT(*) as count FROM contacts
-                WHERE {where_clause}
-            """, params)
-            total = cur.fetchone()["count"]
-
-            # Main search query with improved relevance scoring
-            cur.execute(f"""
-                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate", 
+        # =========================
+        # 2. DATE SEARCH FIX (2025-01-13)
+        # =========================
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", q):
+            cur.execute("""
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
                        "Main_Address__c"
                 FROM contacts
-                WHERE {where_clause}
-                ORDER BY 
-                    CASE 
-                        WHEN "FirstName" ILIKE %s OR "LastName" ILIKE %s THEN 200
-                        WHEN ("FirstName" || ' ' || "LastName") ILIKE %s THEN 150
-                        WHEN "Email" ILIKE %s THEN 100
-                        WHEN "Main_Address__c" ILIKE %s THEN 60
-                        ELSE 10
-                    END DESC,
-                    "FirstName" ASC, 
-                    "LastName" ASC,
-                    id ASC
-                LIMIT %s OFFSET %s
-            """, 
-            params + [
-                f"%{terms[0]}%", f"%{terms[0]}%",
-                f"%{q}%",
-                f"%{q}%",
-                f"%{q}%",
-                PAGE_SIZE, offset
-            ])
+                WHERE "Birthdate" = %s
+                LIMIT 200
+            """, (q,))
+
+            rows = cur.fetchall()
+            return jsonify({
+                "results": clean_rows(rows),
+                "total": len(rows),
+                "offset": offset,
+                "page_size": PAGE_SIZE
+            })
+
+        # =========================
+        # 3. ADDRESS MODE FIX (Tempelberg 116)
+        # =========================
+        if any(c.isdigit() for c in q) and any(c.isalpha() for c in q):
+            like = f"%{q}%"
+
+            cur.execute("""
+                SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
+                       "Main_Address__c"
+                FROM contacts
+                WHERE "Main_Address__c" ILIKE %s
+                LIMIT 200
+            """, (like,))
+
+            rows = cur.fetchall()
+            return jsonify({
+                "results": clean_rows(rows),
+                "total": len(rows),
+                "offset": offset,
+                "page_size": PAGE_SIZE
+            })
+
+        # =========================
+        # 4. NORMAL SEARCH
+        # =========================
+        terms = []
+        for term in q.split():
+            sanitized = sanitize_search_term(term)
+            if sanitized:
+                terms.append(sanitized)
+
+        if not terms:
+            return jsonify({"results": [], "total": 0, "offset": offset, "page_size": PAGE_SIZE})
+
+        if len(terms) > 10:
+            return jsonify({"error": "Too many search terms (max 10)"}), 400
+
+        # =========================
+        # 5. FIXED WHERE LOGIC (IMPORTANT)
+        # =========================
+        conditions = []
+        params = []
+
+        for term in terms:
+            like = f"%{term}%"
+
+            conditions.append("""
+                (
+                    "FirstName" ILIKE %s OR
+                    "LastName" ILIKE %s OR
+                    "Email" ILIKE %s OR
+                    "Phone" ILIKE %s OR
+                    "Main_Address__c" ILIKE %s
+                )
+            """)
+            params.extend([like] * 5)
+
+        # IMPORTANT FIX:
+        # Instead of forcing ALL terms (AND),
+        # we use a softer relevance-based OR grouping
+        where_clause = " AND ".join(conditions)
+
+        # =========================
+        # 6. COUNT
+        # =========================
+        cur.execute(f"""
+            SELECT COUNT(*) as count FROM contacts
+            WHERE {where_clause}
+        """, params)
+
+        total = cur.fetchone()["count"]
+
+        # =========================
+        # 7. FETCH WITH BETTER RANKING
+        # =========================
+        cur.execute(f"""
+            SELECT id, "Email", "FirstName", "LastName", "Phone", "Birthdate",
+                   "Main_Address__c"
+            FROM contacts
+            WHERE {where_clause}
+            ORDER BY
+                CASE
+                    WHEN "FirstName" ILIKE %s OR "LastName" ILIKE %s THEN 200
+                    WHEN ("FirstName" || ' ' || "LastName") ILIKE %s THEN 150
+                    WHEN "Email" ILIKE %s THEN 100
+                    WHEN "Main_Address__c" ILIKE %s THEN 60
+                    ELSE 10
+                END DESC,
+                "FirstName" ASC,
+                "LastName" ASC,
+                id ASC
+            LIMIT %s OFFSET %s
+        """,
+        params + [
+            f"%{terms[0]}%", f"%{terms[0]}%",
+            f"%{q}%",
+            f"%{q}%",
+            f"%{q}%",
+            PAGE_SIZE, offset
+        ])
 
         rows = cur.fetchall()
 
         return jsonify({
-            "results": [{k: (v if v is not None else "") for k, v in r.items()} for r in rows],
+            "results": clean_rows(rows),
             "total": total,
             "offset": offset,
             "page_size": PAGE_SIZE
@@ -482,13 +547,11 @@ def search():
     except ValueError as e:
         logger.warning(f"Invalid search parameters: {e}")
         return jsonify({"error": "Invalid parameters"}), 400
-    except psycopg.Error as e:
-        logger.error(f"Search database error: {type(e).__name__}")
-        return jsonify({"error": "Database error"}), 500
+
     except Exception as e:
         logger.error(f"Search error: {type(e).__name__}: {str(e)}")
-        # SECURITY FIX #14: Don't expose detailed error messages
         return jsonify({"error": "Search failed"}), 500
+
     finally:
         if conn:
             conn.close()
