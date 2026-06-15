@@ -335,11 +335,16 @@ def remove_password():
         logger.error(f"Remove password error: {e}")
         return jsonify({"error": "Database error"}), 500
 
-# ================= SEARCH (Hybrid + Smart Routing v2) =================
+# ================= SEARCH (Hybrid + Smart Routing v4.0) =================
 
 ZIP_RE = re.compile(r"^[0-9]{4}[A-Za-z]{2}$")
 NUMBER_RE = re.compile(r"^\d+$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+STREET_HINTS = [
+    "straat", "laan", "weg", "plein", "gracht",
+    "road", "street", "avenue", "boulevard", "hof"
+]
 
 
 def detect_token_type(term: str):
@@ -354,14 +359,59 @@ def detect_token_type(term: str):
     return "text"
 
 
-def looks_like_address(q: str):
-    return any(c.isdigit() for c in q) and any(c.isalpha() for c in q)
+def is_address_query(q: str):
+    ql = q.lower()
+
+    street_words = [
+        # Nederlands / Vlaams - meest voorkomend
+        "straat", "weg", "laan", "plein", "gracht", "dreef", "steeg", "pad",
+        "singel", "kade", "dijk", "dam", "brug", "poort", "hof", "markt",
+        "baan", "steenweg", "ring", "vest", "lei", "rei", "rui", "kaai",
+        "erf", "plantsoen", "park", "square", "boulevard", "promenade",
+        "passage", "rotonde", "wijk", "oord", "terrein", "court", "drive",
+
+        # Natuur & landschap
+        "berg", "heuvel", "dal", "beek", "rivier", "kanaal", "meer", "bos",
+        "veld", "akker", "broek", "duin", "hei", "heuvel", "polder", "veen",
+        "terp", "brink", "gaarde", "tuin", "hoek", "meers",
+
+        # Overig Nederlands/Belgisch
+        "haven", "port", "werf", "sluis", "sas", "wal", "zijde", "gang",
+        "hofstede", "hoeve", "burg", "burcht", "molen", "kerk", "kapel",
+        "plaats", "dries", "eng", "donk", "hil", "root", "geer", "bunder",
+        "peel", "meent", "waard", "sprong", "zoom", "zoom",
+
+        # Engels / internationaal (nieuwbouw & expatgebieden)
+        "road", "street", "avenue", "boulevard", "lane", "drive", "court",
+        "way", "place", "close", "crescent", "terrace", "grove", "meadow",
+        "park", "square", "walk", "mews", "rise", "view", "heights",
+
+        # Minder frequent maar bestaand
+        "steegje", "paadje", "wegel", "voetpad", "fietspad", "dwarsstraat",
+        "zijweg", "heerweg", "kassei", "kiezel", "til", "heul", "wad",
+        "plantage", "esplanade", "allée", "impasse", "clos", "rue", "chaussée"
+    ]
+
+    has_street = any(w in ql for w in street_words)
+    has_number = any(c.isdigit() for c in ql)
+    has_letter = any(c.isalpha() for c in ql)
+
+    # ONLY upgrade confidence, never break fallback behavior
+    return has_street or (has_number and has_letter)
 
 
 def clean_row(r, is_sqlite):
     if is_sqlite:
         return {k: (r[k] if r[k] is not None else "") for k in r.keys()}
     return {k: (v if v is not None else "") for k, v in r.items()}
+
+
+def PH(is_sqlite):
+    return "?" if is_sqlite else "%s"
+
+
+def LIKE(is_sqlite):
+    return "LIKE" if is_sqlite else "ILIKE"
 
 
 @limiter.limit("20 per minute")
@@ -380,54 +430,34 @@ def search():
         cur = conn.cursor()
 
         # =========================
-        # 0. EMPTY QUERY (browse)
+        # 0. EMPTY BROWSE
         # =========================
         if not q:
-            if is_sqlite:
-                cur.execute("SELECT COUNT(*) FROM contacts")
-                total = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM contacts")
+            total = cur.fetchone()[0]
 
-                cur.execute("""
-                    SELECT id, Name, FirstName, LastName, Email, Phone, Birthdate, Main_Address__c
-                    FROM contacts
-                    ORDER BY FirstName ASC, LastName ASC
-                    LIMIT ? OFFSET ?
-                """, (PAGE_SIZE, offset))
-            else:
-                cur.execute("SELECT COUNT(*) as count FROM contacts")
-                total = cur.fetchone()["count"]
+            cur.execute(f"""
+                SELECT * FROM contacts
+                ORDER BY FirstName ASC, LastName ASC
+                LIMIT {PH(is_sqlite)} OFFSET {PH(is_sqlite)}
+            """, (PAGE_SIZE, offset))
 
-                cur.execute("""
-                    SELECT id, "Name", "FirstName", "LastName", "Email", "Phone", "Birthdate", "Main_Address__c"
-                    FROM contacts
-                    ORDER BY "FirstName" ASC, "LastName" ASC
-                    LIMIT %s OFFSET %s
-                """, (PAGE_SIZE, offset))
-
-            rows = cur.fetchall()
             return jsonify({
-                "results": [clean_row(r, is_sqlite) for r in rows],
+                "results": [clean_row(r, is_sqlite) for r in cur.fetchall()],
                 "total": total,
                 "offset": offset,
                 "page_size": PAGE_SIZE
             })
 
         # =========================
-        # 1. DIRECT DATE SEARCH (2025-01-13)
+        # 1. DATE MODE
         # =========================
         if DATE_RE.match(q):
-            if is_sqlite:
-                cur.execute("""
-                    SELECT * FROM contacts
-                    WHERE Birthdate = ?
-                    LIMIT 200
-                """, (q,))
-            else:
-                cur.execute("""
-                    SELECT * FROM contacts
-                    WHERE "Birthdate" = %s
-                    LIMIT 200
-                """, (q,))
+            cur.execute(f"""
+                SELECT * FROM contacts
+                WHERE Birthdate = {PH(is_sqlite)}
+                LIMIT 200
+            """, (q,))
 
             rows = cur.fetchall()
             return jsonify({
@@ -438,25 +468,19 @@ def search():
             })
 
         # =========================
-        # 2. ADDRESS MODE (IMPORTANT FIX)
+        # 2. ADDRESS MODE (NEW SMART MODE)
         # =========================
-        if looks_like_address(q):
+        if is_address_query(q):
             like = f"%{q}%"
 
-            if is_sqlite:
-                cur.execute("""
-                    SELECT * FROM contacts
-                    WHERE Main_Address__c LIKE ?
-                    LIMIT 200
-                """, (like,))
-            else:
-                cur.execute("""
-                    SELECT * FROM contacts
-                    WHERE "Main_Address__c" ILIKE %s
-                    LIMIT 200
-                """, (like,))
+            cur.execute(f"""
+                SELECT * FROM contacts
+                WHERE Main_Address__c {LIKE(is_sqlite)} {PH(is_sqlite)}
+                LIMIT 200
+            """, (like,))
 
             rows = cur.fetchall()
+
             return jsonify({
                 "results": [clean_row(r, is_sqlite) for r in rows],
                 "total": len(rows),
@@ -465,17 +489,17 @@ def search():
             })
 
         # =========================
-        # 3. TOKENIZE NORMAL SEARCH
+        # 3. TOKENIZE
         # =========================
         raw_terms = q.split()
         terms = [sanitize_search_term(t) for t in raw_terms]
         terms = [t for t in terms if t]
 
         if not terms:
-            return jsonify({"results": [], "total": 0, "offset": offset, "page_size": PAGE_SIZE})
+            return jsonify({"results": [], "total": 0})
 
         if len(terms) > 10:
-            return jsonify({"error": "Too many search terms (max 10)"}), 400
+            return jsonify({"error": "Too many search terms"}), 400
 
         names, numbers, zips, others = [], [], [], []
 
@@ -494,90 +518,69 @@ def search():
         params = []
 
         # =========================
-        # 4. NAME SEARCH (high priority)
+        # 4. NAME (STRICTER)
         # =========================
         for t in names:
             like = f"%{t}%"
-            if is_sqlite:
-                where_parts.append("(FirstName LIKE ? OR LastName LIKE ? OR Name LIKE ?)")
-                params.extend([like, like, like])
-            else:
-                where_parts.append('("FirstName" ILIKE %s OR "LastName" ILIKE %s OR "Name" ILIKE %s)')
-                params.extend([like, like, like])
+
+            where_parts.append(f"""
+                (
+                    FirstName {LIKE(is_sqlite)} {PH(is_sqlite)} OR
+                    LastName {LIKE(is_sqlite)} {PH(is_sqlite)} OR
+                    Name {LIKE(is_sqlite)} {PH(is_sqlite)}
+                )
+            """)
+
+            params.extend([like, like, like])
 
         # =========================
-        # 5. ZIP SEARCH (exact-ish)
+        # 5. ZIP
         # =========================
         for z in zips:
-            like = f"%{z}%"
-            if is_sqlite:
-                where_parts.append("Main_Address__c LIKE ?")
-                params.append(like)
-            else:
-                where_parts.append('"Main_Address__c" ILIKE %s')
-                params.append(like)
+            where_parts.append(f"Main_Address__c {LIKE(is_sqlite)} {PH(is_sqlite)}")
+            params.append(f"%{z}%")
 
         # =========================
-        # 6. HOUSE NUMBER SEARCH (FIXED)
+        # 6. NUMBER (HOUSE NUMBER BOOST)
         # =========================
         for n in numbers:
-            like1 = f"% {n} %"
-            like2 = f"%{n}%"
-
-            if is_sqlite:
-                where_parts.append("(Main_Address__c LIKE ? OR Main_Address__c LIKE ?)")
-                params.extend([like1, like2])
-            else:
-                where_parts.append('("Main_Address__c" ILIKE %s OR "Main_Address__c" ILIKE %s)')
-                params.extend([like1, like2])
+            where_parts.append(f"Main_Address__c {LIKE(is_sqlite)} {PH(is_sqlite)}")
+            params.append(f"% {n} %")
 
         # =========================
-        # 7. FUZZY FALLBACK
+        # 7. FUZZY
         # =========================
         for t in others:
             like = f"%{t}%"
-            if is_sqlite:
-                where_parts.append("""
-                    (Name LIKE ? OR FirstName LIKE ? OR LastName LIKE ?
-                     OR Email LIKE ? OR Phone LIKE ? OR Main_Address__c LIKE ?)
-                """)
-                params.extend([like] * 6)
-            else:
-                where_parts.append("""
-                    ("Name" ILIKE %s OR "FirstName" ILIKE %s OR "LastName" ILIKE %s
-                     OR "Email" ILIKE %s OR "Phone" ILIKE %s OR "Main_Address__c" ILIKE %s)
-                """)
-                params.extend([like] * 6)
 
-        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+            where_parts.append(f"""
+                (
+                    Name {LIKE(is_sqlite)} {PH(is_sqlite)} OR
+                    Email {LIKE(is_sqlite)} {PH(is_sqlite)} OR
+                    Phone {LIKE(is_sqlite)} {PH(is_sqlite)} OR
+                    Main_Address__c {LIKE(is_sqlite)} {PH(is_sqlite)}
+                )
+            """)
 
+            params.extend([like, like, like, like])
+
+        where_clause = " AND ".join(where_parts)
+        
         # =========================
         # 8. COUNT
         # =========================
-        if is_sqlite:
-            cur.execute(f"SELECT COUNT(*) FROM contacts WHERE {where_clause}", params)
-            total = cur.fetchone()[0]
-        else:
-            cur.execute(f"SELECT COUNT(*) as count FROM contacts WHERE {where_clause}", params)
-            total = cur.fetchone()["count"]
+        cur.execute(f"SELECT COUNT(*) FROM contacts WHERE {where_clause}", params)
+        total = cur.fetchone()[0]
 
         # =========================
         # 9. FETCH
         # =========================
-        if is_sqlite:
-            cur.execute(f"""
-                SELECT * FROM contacts
-                WHERE {where_clause}
-                ORDER BY FirstName ASC, LastName ASC
-                LIMIT ? OFFSET ?
-            """, params + [PAGE_SIZE, offset])
-        else:
-            cur.execute(f"""
-                SELECT * FROM contacts
-                WHERE {where_clause}
-                ORDER BY "FirstName" ASC, "LastName" ASC
-                LIMIT %s OFFSET %s
-            """, params + [PAGE_SIZE, offset])
+        cur.execute(f"""
+            SELECT * FROM contacts
+            WHERE {where_clause}
+            ORDER BY FirstName ASC, LastName ASC
+            LIMIT {PH(is_sqlite)} OFFSET {PH(is_sqlite)}
+        """, params + [PAGE_SIZE, offset])
 
         rows = cur.fetchall()
 
